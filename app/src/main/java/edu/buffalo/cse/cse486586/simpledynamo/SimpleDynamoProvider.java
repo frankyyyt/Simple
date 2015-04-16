@@ -73,7 +73,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public int delete(Uri uri, String selection, String[] selectionArgs) {
-        int r = 0;
+        int r;
         r = requestCoordination(2, selection);
 		return r;
 	}
@@ -86,7 +86,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	@Override
 	public Uri insert(Uri uri, ContentValues values) {
 
-        Uri uriReturn  = null;
+        Uri uriReturn;
         uriReturn = requestCoordination(0, values);
 
 		return uriReturn;
@@ -94,7 +94,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 	@Override
 	public boolean onCreate() {
-		// TODO Auto-generated method stub
 
         context = getContext();
         dbHlp = new DatabaseHelper(context);
@@ -114,14 +113,14 @@ public class SimpleDynamoProvider extends ContentProvider {
         // Start thread listening on port
         new Thread(new Server(context)).start();
 
-		return false;
-	}
+        return true;
+    }
 
 	@Override
 	public Cursor query(Uri uri, String[] projection, String selection,
 			String[] selectionArgs, String sortOrder) {
 
-        Cursor cur = null;
+        Cursor cur;
         cur = requestCoordination(1, selection);
 		return cur;
 	}
@@ -130,7 +129,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 	public int update(Uri uri, ContentValues values, String selection,
 			String[] selectionArgs) {
 
-        int rows = 0;
+        int rows;
 
         synchronized (dbLock) {
             rows = db.update(DatabaseSchema.DatabaseEntry.TABLE_NAME, values, selection + "=?", selectionArgs);
@@ -458,7 +457,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
             Log.e(TAG, e.toString());
             e.printStackTrace();
-            return result;
+            return null;
 
         } finally {
 
@@ -793,14 +792,15 @@ public class SimpleDynamoProvider extends ContentProvider {
                     tempCurs = sendQuery(que1);
 
                     if (tempCurs != null) {
+
+                        replyNum++;
+
                         int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
                         int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
                         int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
 
                         if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
                             if (tempCurs.moveToFirst()) {
-
-                                replyNum++;
 
                                 if (tempCurs.getInt(versionIndex) > decision.version) {
                                     decision.key = tempCurs.getString(keyIndex);
@@ -824,14 +824,15 @@ public class SimpleDynamoProvider extends ContentProvider {
                     tempCurs = sendQuery(que2);
 
                     if (tempCurs != null) {
+
+                        replyNum++;
+
                         int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
                         int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
                         int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
 
                         if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
                             if (tempCurs.moveToFirst()) {
-
-                                replyNum++;
 
                                 if (tempCurs.getInt(versionIndex) > decision.version) {
                                     decision.key = tempCurs.getString(keyIndex);
@@ -897,7 +898,6 @@ public class SimpleDynamoProvider extends ContentProvider {
     }
 
     private class ProcessDelete implements Callable<Integer> {
-        // TODO Auto-generated method stub
 
         String key;
         String hashKey;
@@ -927,7 +927,6 @@ public class SimpleDynamoProvider extends ContentProvider {
                 case "*":
 
                     Log.d(TAG, "DELETE *");
-
 
                     synchronized (dbLock) {
                         int rows = 0;
@@ -960,16 +959,20 @@ public class SimpleDynamoProvider extends ContentProvider {
                     // insert the item into local database firstly
                     // then notify the next 2 successor to replicate.
 
-                    if (localPort != c[0] * 2) {
+                    int coordinator = c[0] * 2;
 
-                        Message ins = new Message();
-                        ins.forwardPort = c[0] * 2;
-                        ins.msgType = Message.type.DELETE;
-                        ins.key = key;
+                    int replyNum = 0;
+
+                    if (localPort != coordinator) {
+
+                        Message del = new Message();
+                        del.forwardPort = coordinator;
+                        del.msgType = Message.type.DELETE;
+                        del.key = key;
 
                         // Step 2: sending requests to coordinator.
-                        sendLooper.mHandler.post(new SendThread(ins));
-                        Log.d(TAG, "DELETE -- FORWARD:" + c[0] * 2 + "KEY:" + key + " VERSION: UNKNOWN");
+                        // sendLooper.mHandler.post(new SendThread(ins));
+                        Log.d(TAG, "DELETE -- FORWARD:" + coordinator + "KEY:" + key);
 
 
                         // Step 3: waiting for response from coordinator
@@ -980,21 +983,18 @@ public class SimpleDynamoProvider extends ContentProvider {
 
                     } else {
 
-                        int replyNum = 0;
 
                         // Step 2: sending requests to coordinator.
 
-                        // Step 3: waiting for response from coordinator
-                        // In there, wait another W-1 reply from replication
-                        // If repA success, replyNum ++
-                        // If repB success, replyNum ++
-
-
-                        // Step 4: process reply and repackage response
-                        return (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) ? i : null;
 
                     }
 
+                    // Step 3: waiting for response from coordinator
+                    // In there, wait another W-1 reply from replication
+                    // If repA success, replyNum ++
+                    // If repB success, replyNum ++
+                    // Step 4: process reply and repackage response
+                    return (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) ? i : null;
             }
         }
     }
