@@ -19,6 +19,7 @@ import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Hashtable;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -244,6 +245,8 @@ public class SimpleDynamoProvider extends ContentProvider {
         values.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION, version);
 
         // TODO: Before insert, delete the former version data
+        // Probably not delete former version
+        // Cuz Update operation will handle it.
 
         long newRowId;
         synchronized (dbLock) {
@@ -272,7 +275,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         if (selection.equals("@")) {
             synchronized (dbLock) {
-                // cur = db.rawQuery("SELECT * from " + DatabaseSchema.DatabaseEntry.TABLE_NAME, null);
 
                 cur = db.query(
                         true,
@@ -291,9 +293,6 @@ public class SimpleDynamoProvider extends ContentProvider {
             String hashKey = SimpleDynamoUtils.genHash(selection);
 
             synchronized (dbLock) {
-//                cur = db.rawQuery("SELECT * from " + DatabaseSchema.DatabaseEntry.TABLE_NAME +
-//                        " WHERE " + DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY +
-//                        "=?", new String[] {hashKey});
 
                 cur = db.query(
                         true,
@@ -579,6 +578,8 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         String key;
         String hashKey;
+        Hashtable<String, Pair<String, Integer>> decision = new Hashtable<String, Pair<String, Integer>>() {
+        };
 
         public ProcessQuery(String selection) {
             key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
@@ -614,12 +615,19 @@ public class SimpleDynamoProvider extends ContentProvider {
                     if (cursor != null) {
                         int keyIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
                         int valueIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                        if (keyIndex != -1 && valueIndex != -1) {
+                        int versionIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+                        if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
                             if (cursor.moveToFirst()) {
                                 do {
 
-                                    ((MatrixCursor) cur).addRow(new String[]{
-                                            cursor.getString(keyIndex), cursor.getString(valueIndex)});
+                                    // Put into hashtable firstly
+                                    decision.put(
+                                            cursor.getString(keyIndex),
+                                            new Pair<String, Integer>(cursor.getString(valueIndex),
+                                                    cursor.getInt(versionIndex))
+                                    );
+                                    // ((MatrixCursor) cur).addRow(new String[]{
+                                    //       cursor.getString(keyIndex), cursor.getString(valueIndex)});
 
                                 } while (cursor.moveToNext());
                             }
@@ -631,12 +639,53 @@ public class SimpleDynamoProvider extends ContentProvider {
                         int forward = membership.REMOTEAVD.get(n) * 2;
                         if (forward == localPort) continue;
 
-                        Message delMsg = new Message();
-                        delMsg.msgType = Message.type.QUERY;
-                        delMsg.key = "\"@\"";
-                        delMsg.forwardPort = forward;
+                        Message queMsg = new Message();
+                        queMsg.msgType = Message.type.QUERY;
+                        queMsg.key = "\"@\"";
+                        queMsg.forwardPort = forward;
 
                         // send to everyone and wait response and plus result
+
+                        cursor = sendQuery(queMsg);
+
+                        if (cursor != null) {
+                            int keyIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                            int valueIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                            int versionIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+                            if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                                if (cursor.moveToFirst()) {
+                                    do {
+
+                                        // If key not in hashtable, put this in
+                                        // Else negotiation the final decision
+
+                                        String k = cursor.getString(keyIndex);
+                                        String newU = cursor.getString(valueIndex);
+                                        int newV = cursor.getInt(versionIndex);
+
+                                        Pair<String, Integer> p = decision.get(k);
+                                        if (p == null) {
+                                            decision.put(k, new Pair<String, Integer>(newU, newV));
+                                        } else {
+
+                                            int oldV = p.second;
+
+                                            if (newV > oldV) {
+                                                decision.put(k, new Pair<String, Integer>(newU, newV));
+                                            }
+                                        }
+
+                                    } while (cursor.moveToNext());
+                                }
+                            }
+                            cursor.close();
+                        }
+                    }
+
+                    for (String k : decision.keySet()) {
+                        Pair<String, Integer> p = decision.get(k);
+                        String u = p.first;
+                        ((MatrixCursor) cur).addRow(new String[]{k, u});
                     }
 
                     return cur;
