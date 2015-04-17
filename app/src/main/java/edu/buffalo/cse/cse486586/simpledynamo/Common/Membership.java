@@ -19,7 +19,7 @@ public class Membership {
 
     public int findCoordinator(String key) {
 
-        String hashKey = (key != null)? SimpleDynamoUtils.genHash(key) : "";
+        String hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
 
         for (int i = 0; i < REMOTEAVD.size(); i++) {
 
@@ -29,10 +29,10 @@ public class Membership {
             String cur = SimpleDynamoUtils.genHash(String.valueOf(REMOTEAVD.get(i)));
 
             if (hashKey.compareToIgnoreCase(end) > 0)
-                return Integer.getInteger(end);
+                return 0;
 
             if (hashKey.compareToIgnoreCase(cur) < 0)
-                return Integer.getInteger(cur);
+                return i;
         }
 
         return -1;
@@ -41,7 +41,7 @@ public class Membership {
     public int[] findPreferenceList(String key) {
 
         int[] r = new int[4];
-        String hashKey = (key != null)? SimpleDynamoUtils.genHash(key) : "";
+        String hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
 
         for (int i = 0; i < REMOTEAVD.size(); i++) {
 
@@ -51,18 +51,18 @@ public class Membership {
             String cur = SimpleDynamoUtils.genHash(String.valueOf(REMOTEAVD.get(i)));
 
             if (hashKey.compareToIgnoreCase(end) > 0) {
-                r[0] = Integer.getInteger(end);
-                r[1] = REMOTEAVD.get(0);
-                r[2] = REMOTEAVD.get(1);
-                r[3] = REMOTEAVD.get(2);
+                r[0] = REMOTEAVD.get(0);
+                r[1] = REMOTEAVD.get(1);
+                r[2] = REMOTEAVD.get(2);
+                r[3] = REMOTEAVD.get(3);
                 break;
             }
 
             if (hashKey.compareToIgnoreCase(cur) < 0) {
-                r[0] = Integer.getInteger(cur);
-                r[1] = REMOTEAVD.get((i+1)%5);
-                r[2] = REMOTEAVD.get((i+2)%5);
-                r[3] = REMOTEAVD.get((i+3)%5);
+                r[0] = REMOTEAVD.get(i % 5);
+                r[1] = REMOTEAVD.get((i + 1) % 5);
+                r[2] = REMOTEAVD.get((i + 2) % 5);
+                r[3] = REMOTEAVD.get((i + 3) % 5);
                 break;
             }
         }

@@ -36,8 +36,7 @@ import edu.buffalo.cse.cse486586.simpledynamo.Utils.SimpleDynamoUtils;
 
 public class SimpleDynamoProvider extends ContentProvider {
 
-    private static String TAG = SimpleDynamoProvider.class.getSimpleName();
-
+    private static String TAG;
     private static int localPort;
     private final Object dbLock = new Object(); // lock for database
     Context context; // application context
@@ -47,7 +46,6 @@ public class SimpleDynamoProvider extends ContentProvider {
     private LooperThread sendLooper;
     private LooperThread processLooper;
     private ExecutorService requestExecPool;
-
 
     /**
      * Calculate the port number that this AVD listens on.
@@ -63,7 +61,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     /**
      * Elegantly quit the process
-     *
      */
     public void quit() {
         sendLooper.quit();
@@ -71,35 +68,128 @@ public class SimpleDynamoProvider extends ContentProvider {
         requestExecPool.shutdown();
     }
 
-	@Override
-	public int delete(Uri uri, String selection, String[] selectionArgs) {
-        int r;
+    @Override
+    public int delete(Uri uri, String selection, String[] selectionArgs) {
+        int r = 0;
         r = requestCoordination(2, selection);
-		return r;
-	}
+        return r;
+    }
 
-	@Override
-	public String getType(Uri uri) {
-		return null;
-	}
+    @Override
+    public String getType(Uri uri) {
+        return null;
+    }
 
-	@Override
-	public Uri insert(Uri uri, ContentValues values) {
+    @Override
+    public Uri insert(Uri uri, ContentValues values) {
 
-        Uri uriReturn;
-        uriReturn = requestCoordination(0, values);
+//        Uri uriReturn;
+//        uriReturn = requestCoordination(0, values);
+//
+//		return uriReturn;
+        return processInsert(uri, values);
+    }
 
-		return uriReturn;
-	}
+    public Uri processInsert(Uri u, ContentValues values) {
+        String key = values.getAsString(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+        String value = values.getAsString(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
 
-	@Override
-	public boolean onCreate() {
+
+        // Step 1: Identify the node that holds the key.
+        int[] c = membership.findPreferenceList(key);
+        int coordinator = c[0] * 2;
+        int replicA = c[1] * 2;
+        int replicB = c[2] * 2;
+
+        // When item is not belonging to current node
+        // forward the item to node which it belongs to
+        // When item is belonging to current node
+        // insert the item into local database firstly
+        // then notify the next 2 successor to replicate.
+
+        int replyNum = 0;
+
+        if (localPort != coordinator) {
+
+            Message ins = new Message();
+            ins.originPort = localPort;
+            ins.forwardPort = coordinator;
+            ins.msgType = Message.type.INSERT;
+            ins.key = key;
+            ins.value = value;
+
+            // Step 2: sending requests to coordinator.
+
+            // sendLooper.mHandler.post(new SendThread(ins));
+            Log.d(TAG, "INSERT -- FORWARD:" + coordinator + " KEY:" + key);
+            if (sendInsert(ins)) {
+                replyNum++;
+                Log.d(TAG, ins.forwardPort + " successfully insert");
+            } else {
+                Log.e(TAG, ins.forwardPort + " fail to insert");
+            }
+
+        } else {
+
+            // Step 2: sending requests to coordinator.
+
+            u = localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, values);
+            replyNum = (u != null) ? replyNum + 1 : replyNum;
+            Log.d(TAG, "INSERT -- LOCAL:" + localPort + " KEY:" + key);
+
+        }
+
+        // Step 3: waiting for response from coordinator
+        // In there, wait another W-1 reply from replication
+        // If repA success, replyNum ++
+        // If repB success, replyNum ++
+
+        // Replication
+        Message repA = new Message();
+        repA.msgType = Message.type.REPLICA;
+        repA.originPort = localPort;
+        repA.forwardPort = replicA;
+        repA.key = key;
+        repA.value = value;
+
+        Log.d(TAG, "REPLICA -- TO:" + replicA + "KEY:" + key);
+        if (sendInsert(repA)) {
+            replyNum++;
+            Log.d(TAG, repA.forwardPort + " successfully replication");
+        } else {
+            Log.e(TAG, repA.forwardPort + " fail to replication");
+        }
+
+        // Replication
+        Message repB = new Message();
+        repB.msgType = Message.type.REPLICA;
+        repB.originPort = localPort;
+        repB.forwardPort = replicB;
+        repB.key = key;
+        repB.value = value;
+
+        Log.d(TAG, "REPLICA -- TO:" + replicB + "KEY:" + key);
+        if (sendInsert(repB)) {
+            replyNum++;
+            Log.d(TAG, repB.forwardPort + " successfully replication");
+        } else {
+            Log.e(TAG, repB.forwardPort + " fail to replication");
+        }
+
+        // Step 4: process reply and repackage response
+        return (replyNum >= SimpleDynamoUtils.WRITE_CONFIRM_NODE_NUM) ? u : null;
+    }
+
+    @Override
+    public boolean onCreate() {
+
 
         context = getContext();
         dbHlp = new DatabaseHelper(context);
         db = dbHlp.getWritableDatabase();
 
         localPort = getLocalPort();
+        TAG = String.valueOf(localPort) + " " + SimpleDynamoProvider.class.getSimpleName();
 
         membership = new Membership();
         sendLooper = new LooperThread();
@@ -116,18 +206,18 @@ public class SimpleDynamoProvider extends ContentProvider {
         return true;
     }
 
-	@Override
-	public Cursor query(Uri uri, String[] projection, String selection,
-			String[] selectionArgs, String sortOrder) {
+    @Override
+    public Cursor query(Uri uri, String[] projection, String selection,
+                        String[] selectionArgs, String sortOrder) {
 
-        Cursor cur;
+        Cursor cur = null;
         cur = requestCoordination(1, selection);
-		return cur;
-	}
+        return cur;
+    }
 
-	@Override
-	public int update(Uri uri, ContentValues values, String selection,
-			String[] selectionArgs) {
+    @Override
+    public int update(Uri uri, ContentValues values, String selection,
+                      String[] selectionArgs) {
 
         int rows;
 
@@ -153,16 +243,17 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         switch (flag) {
             case 0:
-                Uri u = null;
-                Callable<Uri> insert = new ProcessInsert((ContentValues)parameters);
-                Future<Uri> ins = requestExecPool.submit(insert);
-                try {
-                    u = ins.get();
-                } catch (InterruptedException | ExecutionException e) {
-                    Log.e(TAG, "insert error");
-                    e.printStackTrace();
-                }
-                return (R)u;
+//                Uri u = null;
+//                Callable<Uri> insert = new ProcessInsert((ContentValues)parameters);
+//                Future<Uri> ins = requestExecPool.submit(insert);
+//                try {
+//                    u = ins.get();
+//                } catch (InterruptedException | ExecutionException e) {
+//                    Log.e(TAG, "insert error");
+//                    e.printStackTrace();
+//                }
+//                return (R)u;
+                return null;
             case 1:
                 Cursor cur = null;
                 Callable<Cursor> query = new ProcessQuery(String.valueOf(parameters));
@@ -173,7 +264,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     Log.e(TAG, "query error");
                     e.printStackTrace();
                 }
-                return (R)cur;
+                return (R) cur;
             case 2:
                 int i = 0;
                 Callable<Integer> delete = new ProcessDelete(String.valueOf(parameters));
@@ -184,7 +275,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     Log.e(TAG, "delete error");
                     e.printStackTrace();
                 }
-                return (R)Integer.valueOf(i);
+                return (R) Integer.valueOf(i);
             default:
                 return null;
         }
@@ -242,6 +333,7 @@ public class SimpleDynamoProvider extends ContentProvider {
         // Increase the version
         int version = getKeyVersion(hashKey) + 1;
         values.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION, version);
+        values.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY, hashKey);
 
         // TODO: Before insert, delete the former version data
         // Probably not delete former version
@@ -252,7 +344,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             newRowId = db.insertOrThrow(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, values);
         }
 
-        Log.d(TAG, "Insert:(" + newRowId + ") Version: " + version + " KEY: " + key + " VALUE: " + value);
+        Log.d(TAG, "Insert:(" + newRowId + ") Version: " + version + " KEY: " + key + " VALUE: " + value + " HASHKEY: " + hashKey);
 
         return Uri.withAppendedPath(SimpleDynamoUtils.DATABASE_CONTENT_URL, String.valueOf(newRowId));
     }
@@ -542,110 +634,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 
     /**
-     * Class of Callable function
-     */
-    private class ProcessInsert implements Callable<Uri> {
-
-        ContentValues values;
-
-        public ProcessInsert(ContentValues cv) {
-            this.values = cv;
-        }
-
-        @Override
-        public Uri call() throws Exception {
-            Uri u = null;
-            String key = values.getAsString(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-            String value = values.getAsString(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-
-
-            // Step 1: Identify the node that holds the key.
-            int[] c = membership.findPreferenceList(key);
-            int coordinator = c[0] * 2;
-            int replicA = c[1] * 2;
-            int replicB = c[2] * 2;
-
-            // When item is not belonging to current node
-            // forward the item to node which it belongs to
-            // When item is belonging to current node
-            // insert the item into local database firstly
-            // then notify the next 2 successor to replicate.
-
-            int replyNum = 0;
-
-            if (localPort != coordinator) {
-
-                Message ins = new Message();
-                ins.forwardPort = coordinator;
-                ins.msgType = Message.type.INSERT;
-                ins.key = key;
-                ins.value = value;
-
-                // Step 2: sending requests to coordinator.
-
-                // sendLooper.mHandler.post(new SendThread(ins));
-                Log.d(TAG, "INSERT -- FORWARD:" + coordinator + " KEY:" + key);
-                if (sendInsert(ins)) {
-                    replyNum++;
-                    Log.d(TAG, ins.forwardPort + " successfully insert");
-                } else {
-                    Log.e(TAG, ins.forwardPort + " fail to insert");
-                }
-
-            } else {
-
-                // Step 2: sending requests to coordinator.
-
-                u = localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, values);
-                replyNum = (u != null) ? replyNum + 1 : replyNum;
-                Log.d(TAG, "INSERT -- LOCAL:" + localPort + " KEY:" + key);
-
-            }
-
-            // Step 3: waiting for response from coordinator
-            // In there, wait another W-1 reply from replication
-            // If repA success, replyNum ++
-            // If repB success, replyNum ++
-
-            // Replication
-            Message repA = new Message();
-            repA.msgType = Message.type.REPLICA;
-            repA.forwardPort = replicA;
-            repA.key = key;
-            repA.value = value;
-
-            Log.d(TAG, "REPLICA -- TO:" + replicA + "KEY:" + key);
-            if (sendInsert(repA)) {
-                replyNum++;
-                Log.d(TAG, repA.forwardPort + " successfully replication");
-            } else {
-                Log.e(TAG, repA.forwardPort + " fail to replication");
-            }
-
-            // Replication
-            Message repB = new Message();
-            repA.msgType = Message.type.REPLICA;
-            repB.forwardPort = replicB;
-            repB.key = key;
-            repB.value = value;
-
-            Log.d(TAG, "REPLICA -- TO:" + replicB + "KEY:" + key);
-            if (sendInsert(repB)) {
-                replyNum++;
-                Log.d(TAG, repB.forwardPort + " successfully replication");
-            } else {
-                Log.e(TAG, repB.forwardPort + " fail to replication");
-            }
-
-            // Step 4: process reply and repackage response
-            return (replyNum >= SimpleDynamoUtils.WRITE_CONFIRM_NODE_NUM) ? u : null;
-        }
-    }
-
-
-    /**
      * Class of Callable function to handle query
-     *
      */
     private class ProcessQuery implements Callable<Cursor> {
 
@@ -1107,7 +1096,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                 try {
 
                     clientSocket = serverSocket.accept();
-                    clientSocket.setSoTimeout(500);
+                    clientSocket.setSoTimeout(1000);
 
                     ObjectInputStream input = new ObjectInputStream(
                             new BufferedInputStream(clientSocket.getInputStream()));
@@ -1148,6 +1137,35 @@ public class SimpleDynamoProvider extends ContentProvider {
                             // Write message
                             iOut.writeObject(reply);
                             iOut.flush();
+
+                            Log.d(TAG, "Reply sent");
+
+                            break;
+
+                        case REPLICA:
+
+                            key = msg.key;
+                            value = msg.value;
+
+                            ContentValues c = new ContentValues();
+                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
+                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
+
+                            Uri q = localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, c);
+
+                            Log.d(TAG, "REPLICA " + key + " in " + localPort + ", send back ACK");
+
+
+                            reply = new Message();
+                            reply.msgType = Message.type.ACK;
+
+                            // Create out stream
+                            ObjectOutputStream rOut = new ObjectOutputStream(
+                                    new BufferedOutputStream(clientSocket.getOutputStream()));
+
+                            // Write message
+                            rOut.writeObject(reply);
+                            rOut.flush();
 
                             Log.d(TAG, "Reply sent");
 
@@ -1229,13 +1247,13 @@ public class SimpleDynamoProvider extends ContentProvider {
                             value = msg.value;
                             version = msg.version;
 
-                            ContentValues c = new ContentValues();
-                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
-                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY, hashKey);
-                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
-                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION, version);
+                            ContentValues up = new ContentValues();
+                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
+                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY, hashKey);
+                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
+                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION, version);
 
-                            update(SimpleDynamoUtils.DATABASE_CONTENT_URL, c,
+                            update(SimpleDynamoUtils.DATABASE_CONTENT_URL, up,
                                     DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY,
                                     new String[]{hashKey});
 

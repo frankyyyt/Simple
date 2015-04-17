@@ -18,11 +18,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public static final String DATABASE_NAME = "simpledynamo";
 
     private static final String TEXT_TYPE = " TEXT";
+    private static final String INT_TYPE = " INTEGER";
     private static final String COMMA_SEP = ",";
     private static final String SQL_CREATE_ENTRIES =
             "CREATE TABLE " + DatabaseSchema.DatabaseEntry.TABLE_NAME + " (" +
                     DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY + " TEXT PRIMARY KEY," +
                     DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY + TEXT_TYPE + COMMA_SEP +
+                    DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION + INT_TYPE + COMMA_SEP +
                     DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE + TEXT_TYPE + ");";
 
     private static final String SQL_DELETE_ENTRIES =

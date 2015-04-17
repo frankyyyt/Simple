@@ -22,22 +22,18 @@ public class LooperThread extends Thread {
     }
 
     /**
-     *
      * Simply post the quit runnable to the thread's event loop
      */
-    public void quit()
-    {
+    public void quit() {
         mHandler.post(new QuitLooper());
     }
 
     /**
-     *
      * Inner Runnable which can be posted to the handler
      */
     class QuitLooper implements Runnable {
         @Override
-        public void run()
-        {
+        public void run() {
             // Causes the loop() method to terminate without processing any more messages
             // in the message queue. Any attempt to post messages to the queue after the
             // looper is asked to quit will fail. For example, the sendMessage(Message)

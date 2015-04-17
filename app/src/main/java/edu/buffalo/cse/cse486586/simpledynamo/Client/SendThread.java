@@ -19,9 +19,8 @@ import edu.buffalo.cse.cse486586.simpledynamo.Common.Message;
  */
 public class SendThread implements Runnable {
 
-    private String TAG = SendThread.class.getSimpleName();
-
     Message msg;
+    private String TAG = SendThread.class.getSimpleName();
 
     public SendThread(Message m) {
         this.msg = m;

@@ -15,19 +15,18 @@ import java.util.Formatter;
  */
 public class SimpleDynamoUtils {
 
-    private static String TAG = SimpleDynamoUtils.class.getSimpleName();
-
     public static final int SERVER_PORT = 10000;
     public static final int WRITE_CONFIRM_NODE_NUM = 2;
     public static final int READ_CONFIRM_NODE_NUM = 2;
     public static final String DATABASE_AUTHORITY = "edu.buffalo.cse.cse486586.simpledynamo.provider";
     public static final String DATABASE_SCHEME = "content";
     public static final Uri DATABASE_CONTENT_URL = buildUri(DATABASE_SCHEME, DATABASE_AUTHORITY);
+    private static String TAG = SimpleDynamoUtils.class.getSimpleName();
 
     /**
      * buildUri() demonstrates how to build a URI for a ContentProvider.
      *
-     * @param scheme String
+     * @param scheme    String
      * @param authority String
      * @return the URI
      */

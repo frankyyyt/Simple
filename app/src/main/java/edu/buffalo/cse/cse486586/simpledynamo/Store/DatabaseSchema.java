@@ -12,7 +12,8 @@ public class DatabaseSchema {
 
     // To prevent someone from accidentally instantiating the contract class,
     // give it an empty constructor.
-    public DatabaseSchema() {}
+    public DatabaseSchema() {
+    }
 
     /* Inner class that defines the table contents */
     public static abstract class DatabaseEntry implements BaseColumns {
