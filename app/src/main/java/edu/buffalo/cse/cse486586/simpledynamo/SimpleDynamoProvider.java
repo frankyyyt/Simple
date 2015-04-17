@@ -475,6 +475,75 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     }
 
+    /**
+     * send delete message
+     *
+     * @param msg
+     * @return <code>boolean</code> delete success or not
+     */
+    private boolean sendDelete(Message msg) {
+        Socket socket = null;
+
+        try {
+
+            // Create socket
+            socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), msg.forwardPort);
+
+            socket.setSoTimeout(500);
+
+            // Create out stream
+            ObjectOutputStream out = new ObjectOutputStream(
+                    new BufferedOutputStream(socket.getOutputStream()));
+
+            // Write message
+            out.writeObject(msg);
+            out.flush();
+
+            Log.d(TAG, "Sent DELETE to " + msg.forwardPort + ", Waiting for reply...");
+
+            // Wait back
+            ObjectInputStream in = new ObjectInputStream(
+                    new BufferedInputStream(socket.getInputStream()));
+
+            Message reply = (Message) in.readObject();
+
+            if (reply.msgType == Message.type.ACK) {
+                Log.d(TAG, "ACK - from " + msg.forwardPort);
+
+                in.close();
+                out.close();
+
+                return true;
+            }
+
+            in.close();
+            out.close();
+
+        } catch (ClassNotFoundException | IOException e) {
+
+            Log.e(TAG, e.toString());
+            e.printStackTrace();
+            return false;
+
+        } finally {
+
+            // Close socket
+            try {
+                if (socket != null) socket.close();
+            } catch (IOException e) {
+                Log.e(TAG, e.toString());
+                e.printStackTrace();
+            }
+
+        }
+
+        return false;
+    }
+
+
+    /**
+     * Class of Callable function
+     */
     private class ProcessInsert implements Callable<Uri> {
 
         ContentValues values;
@@ -573,6 +642,11 @@ public class SimpleDynamoProvider extends ContentProvider {
         }
     }
 
+
+    /**
+     * Class of Callable function to handle query
+     *
+     */
     private class ProcessQuery implements Callable<Cursor> {
 
         String key;
@@ -977,15 +1051,19 @@ public class SimpleDynamoProvider extends ContentProvider {
 
                         // Step 3: waiting for response from coordinator
 
+                        if (sendDelete(del)) {
+                            replyNum++;
+                        }
 
                         // Step 4: process reply and repackage response
-                        return i;
 
                     } else {
 
 
                         // Step 2: sending requests to coordinator.
+                        localDelete(SimpleDynamoUtils.DATABASE_CONTENT_URL, key, null);
 
+                        replyNum++;
 
                     }
 
@@ -994,7 +1072,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     // If repA success, replyNum ++
                     // If repB success, replyNum ++
                     // Step 4: process reply and repackage response
-                    return (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) ? i : null;
+                    return (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) ? i : 0;
             }
         }
     }
