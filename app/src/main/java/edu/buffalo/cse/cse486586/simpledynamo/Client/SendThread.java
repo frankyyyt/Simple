@@ -2,14 +2,14 @@ package edu.buffalo.cse.cse486586.simpledynamo.Client;
 
 import android.util.Log;
 
-import java.io.BufferedOutputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 
 import edu.buffalo.cse.cse486586.simpledynamo.Common.Message;
+import edu.buffalo.cse.cse486586.simpledynamo.Utils.SimpleDynamoUtils;
 
 /**
  * SimpleDynamo
@@ -34,19 +34,13 @@ public class SendThread implements Runnable {
             Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), msg.forwardPort);
 
             // Create out stream
-            ObjectOutputStream out = new ObjectOutputStream(
-                    new BufferedOutputStream(socket.getOutputStream()));
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
             // Write message
-            out.writeObject(msg);
+            out.writeUTF(SimpleDynamoUtils.toJSON(msg));
             out.flush();
 
             Log.d(TAG, "Send from Client Thread");
-
-            // Try not kill the socket in here
-            // Close socket
-            // socket.close();
-
 
         } catch (UnknownHostException e) {
             Log.e(TAG, e.toString());

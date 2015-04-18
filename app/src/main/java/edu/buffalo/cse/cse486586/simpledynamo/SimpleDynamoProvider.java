@@ -13,6 +13,8 @@ import android.util.Pair;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -20,11 +22,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Hashtable;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 import edu.buffalo.cse.cse486586.simpledynamo.Client.SendThread;
 import edu.buffalo.cse.cse486586.simpledynamo.Common.LooperThread;
@@ -70,9 +69,96 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
-        int r = 0;
-        r = requestCoordination(2, selection);
-        return r;
+        return processDelete(uri, selection, selectionArgs);
+    }
+
+    public int processDelete(Uri uri, String selection, String[] selectionArgs) {
+        String key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
+        String hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
+
+
+        int i = 0;
+
+        switch (key) {
+            case "@":
+
+                Log.d(TAG, "DELETE @");
+
+                synchronized (dbLock) {
+                    i = db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, null);
+                }
+
+                Log.d(TAG, "DELETE @ finished");
+
+                return i;
+
+            case "*":
+
+                Log.d(TAG, "DELETE *");
+
+                synchronized (dbLock) {
+                    int rows = 0;
+                    rows = db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, null);
+                    i += rows;
+                }
+
+                for (int n = 0; n < membership.REMOTEAVD.size(); n++) {
+                    int forward = membership.REMOTEAVD.get(n) * 2;
+                    if (forward == localPort) continue;
+
+                    Message delMsg = new Message(Message.Type.DELETE, "\"@\"", null, -1, localPort, forward);
+
+                    // send to everyone and wait response and plus result
+                }
+
+                return i;
+
+            default:
+
+                // Step 1: Identify the node that holds the key.
+                int[] c = membership.findPreferenceList(key);
+
+                // When item is not belonging to current node
+                // forward the item to node which it belongs to
+                // When item is belonging to current node
+                // insert the item into local database firstly
+                // then notify the next 2 successor to replicate.
+
+                int coordinator = c[0] * 2;
+
+                int replyNum = 0;
+
+                if (localPort != coordinator) {
+
+                    Message del = new Message(Message.Type.DELETE, key, null, -1, localPort, coordinator);
+
+                    // Step 2: sending requests to coordinator.
+                    Log.d(TAG, "DELETE -- FORWARD:" + coordinator + "KEY:" + key);
+
+                    // Step 3: waiting for response from coordinator
+
+                    if (sendDelete(del)) {
+                        replyNum++;
+                    }
+
+                    // Step 4: process reply and repackage response
+
+                } else {
+
+                    // Step 2: sending requests to coordinator.
+                    localDelete(SimpleDynamoUtils.DATABASE_CONTENT_URL, key, null);
+
+                    replyNum++;
+
+                }
+
+                // Step 3: waiting for response from coordinator
+                // In there, wait another W-1 reply from replication
+                // If repA success, replyNum ++
+                // If repB success, replyNum ++
+                // Step 4: process reply and repackage response
+                return (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) ? i : 0;
+        }
     }
 
     @Override
@@ -82,11 +168,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
-
-//        Uri uriReturn;
-//        uriReturn = requestCoordination(0, values);
-//
-//		return uriReturn;
         return processInsert(uri, values);
     }
 
@@ -111,16 +192,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         if (localPort != coordinator) {
 
-            Message ins = new Message();
-            ins.originPort = localPort;
-            ins.forwardPort = coordinator;
-            ins.msgType = Message.type.INSERT;
-            ins.key = key;
-            ins.value = value;
+            Message ins = new Message(Message.Type.INSERT, key, value, -1, localPort, coordinator);
 
             // Step 2: sending requests to coordinator.
 
-            // sendLooper.mHandler.post(new SendThread(ins));
             Log.d(TAG, "INSERT -- FORWARD:" + coordinator + " KEY:" + key);
             if (sendInsert(ins)) {
                 replyNum++;
@@ -145,12 +220,7 @@ public class SimpleDynamoProvider extends ContentProvider {
         // If repB success, replyNum ++
 
         // Replication
-        Message repA = new Message();
-        repA.msgType = Message.type.REPLICA;
-        repA.originPort = localPort;
-        repA.forwardPort = replicA;
-        repA.key = key;
-        repA.value = value;
+        Message repA = new Message(Message.Type.REPLICA, key, value, -1, localPort, replicA);
 
         Log.d(TAG, "REPLICA -- TO:" + replicA + "KEY:" + key);
         if (sendInsert(repA)) {
@@ -161,12 +231,7 @@ public class SimpleDynamoProvider extends ContentProvider {
         }
 
         // Replication
-        Message repB = new Message();
-        repB.msgType = Message.type.REPLICA;
-        repB.originPort = localPort;
-        repB.forwardPort = replicB;
-        repB.key = key;
-        repB.value = value;
+        Message repB = new Message(Message.Type.REPLICA, key, value, -1, localPort, replicB);
 
         Log.d(TAG, "REPLICA -- TO:" + replicB + "KEY:" + key);
         if (sendInsert(repB)) {
@@ -209,10 +274,294 @@ public class SimpleDynamoProvider extends ContentProvider {
     @Override
     public Cursor query(Uri uri, String[] projection, String selection,
                         String[] selectionArgs, String sortOrder) {
+        return processQuery(uri, projection, selection, selectionArgs, sortOrder);
+    }
 
+    public Cursor processQuery(Uri uri, String[] projection, String selection,
+                               String[] selectionArgs, String sortOrder) {
         Cursor cur = null;
-        cur = requestCoordination(1, selection);
-        return cur;
+        String key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
+        String hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
+        Hashtable<String, Pair<String, Integer>> decision = new Hashtable<String, Pair<String, Integer>>() {
+        };
+
+        switch (key) {
+            case "@":
+
+                Log.d(TAG, "QUERY @");
+
+                cur = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, "@", null, null);
+
+                Log.d(TAG, "QUERY @ finished");
+
+                return cur;
+
+            case "*":
+
+                Cursor cursor = null;
+                cur = new MatrixCursor(new String[]{
+                        DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY,
+                        DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE});
+
+                Log.d(TAG, "QUERY *");
+
+                cursor = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, "@", null, null);
+
+                if (cursor != null) {
+                    int keyIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                    int valueIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                    int versionIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+                    if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                        if (cursor.moveToFirst()) {
+                            do {
+
+                                // Put into hashtable firstly
+                                decision.put(
+                                        cursor.getString(keyIndex),
+                                        new Pair<>(cursor.getString(valueIndex),
+                                                cursor.getInt(versionIndex))
+                                );
+
+                            } while (cursor.moveToNext());
+                        }
+                    }
+                    cursor.close();
+                }
+
+                for (int n = 0; n < membership.REMOTEAVD.size(); n++) {
+                    int forward = membership.REMOTEAVD.get(n) * 2;
+                    if (forward == localPort) continue;
+
+                    Message queMsg = new Message(Message.Type.QUERY, "\"@\"", null, -1, localPort, forward);
+
+                    // send to everyone and wait response and plus result
+
+                    cursor = sendQuery(queMsg);
+
+                    if (cursor != null) {
+                        int keyIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                        int valueIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                        int versionIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+                        if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                            if (cursor.moveToFirst()) {
+                                do {
+
+                                    // If key not in hashtable, put this in
+                                    // Else negotiation the final decision
+
+                                    String k = cursor.getString(keyIndex);
+                                    String newU = cursor.getString(valueIndex);
+                                    int newV = cursor.getInt(versionIndex);
+
+                                    Pair<String, Integer> p = decision.get(k);
+                                    if (p == null) {
+                                        decision.put(k, new Pair<>(newU, newV));
+                                    } else {
+
+                                        int oldV = p.second;
+
+                                        if (newV > oldV) {
+                                            decision.put(k, new Pair<>(newU, newV));
+                                        }
+                                    }
+
+                                } while (cursor.moveToNext());
+                            }
+                        }
+                        cursor.close();
+                    }
+                }
+
+                for (String k : decision.keySet()) {
+                    Pair<String, Integer> p = decision.get(k);
+                    String u = p.first;
+                    ((MatrixCursor) cur).addRow(new String[]{k, u});
+                }
+
+                return cur;
+
+            default:
+
+                // Step 1: Identify the node that holds the key.
+                int[] c = membership.findPreferenceList(key);
+                int coordinator = c[0] * 2;
+                int replicA = c[1] * 2;
+                int replicB = c[2] * 2;
+
+                // When item is not belonging to current node
+                // forward the item to node which it belongs to
+                // When item is belonging to current node
+                // query data from local database firstly
+                // query data from replication
+                // then decide the final version data.
+
+                int replyNum = 0;
+                int decVersion = -1;
+                String decKey = "";
+                String decValue = "";
+
+                cur = new MatrixCursor(new String[]{
+                        DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY,
+                        DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE
+                });
+                Cursor tempCurs;
+
+                if (localPort != coordinator) {
+
+                    Message que = new Message(Message.Type.QUERY, key, null, -1, localPort, coordinator);
+
+                    // Step 2: sending requests to coordinator.
+
+                    Log.d(TAG, "QUERY -- FORWARD:" + coordinator + "KEY:" + key);
+
+                    tempCurs = sendQuery(que);
+
+                    if (tempCurs != null) {
+
+                        replyNum++;
+
+                        int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                        int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                        int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+
+                        if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                            if (tempCurs.moveToFirst()) {
+                                if (tempCurs.getInt(versionIndex) > decVersion) {
+                                    decKey = tempCurs.getString(keyIndex);
+                                    decValue = tempCurs.getString(valueIndex);
+                                    decVersion = tempCurs.getInt(versionIndex);
+                                }
+                            }
+                        }
+
+                        tempCurs.close();
+                    }
+
+                } else {
+
+                    // Step 2: sending requests to coordinator.
+
+                    tempCurs = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, key, null, null);
+
+                    if (tempCurs != null) {
+
+                        replyNum++;
+
+                        int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                        int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                        int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+
+                        if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                            if (tempCurs.moveToFirst()) {
+                                if (tempCurs.getInt(versionIndex) > decVersion) {
+                                    decKey = tempCurs.getString(keyIndex);
+                                    decValue = tempCurs.getString(valueIndex);
+                                    decVersion = tempCurs.getInt(versionIndex);
+                                }
+                            }
+                        }
+
+                        tempCurs.close();
+                    }
+
+                }
+
+                // Step 3: waiting for response from coordinator
+                // In there, wait another R-1 reply from replication
+                // If repA success, replyNum ++
+                // If repB success, replyNum ++
+
+                Message que1 = new Message(Message.Type.QUERY, key, null, -1, localPort, replicA);
+
+                Log.d(TAG, "QUERY -- REPLICA:" + replicA + "KEY:" + key);
+
+                tempCurs = sendQuery(que1);
+
+                if (tempCurs != null) {
+
+                    replyNum++;
+
+                    int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                    int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                    int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+
+                    if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                        if (tempCurs.moveToFirst()) {
+
+                            if (tempCurs.getInt(versionIndex) > decVersion) {
+                                decKey = tempCurs.getString(keyIndex);
+                                decValue = tempCurs.getString(valueIndex);
+                                decVersion = tempCurs.getInt(versionIndex);
+                            }
+                        }
+                    }
+
+                    tempCurs.close();
+                }
+
+
+                Message que2 = new Message(Message.Type.QUERY, key, null, -1, localPort, replicB);
+
+                Log.d(TAG, "QUERY -- REPLICA:" + replicB + "KEY:" + key);
+
+                tempCurs = sendQuery(que2);
+
+                if (tempCurs != null) {
+
+                    replyNum++;
+
+                    int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                    int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                    int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+
+                    if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                        if (tempCurs.moveToFirst()) {
+
+                            if (tempCurs.getInt(versionIndex) > decVersion) {
+                                decKey = tempCurs.getString(keyIndex);
+                                decValue = tempCurs.getString(valueIndex);
+                                decVersion = tempCurs.getInt(versionIndex);
+                            }
+                        }
+                    }
+
+                    tempCurs.close();
+                }
+
+
+                // Step 4: process reply and repackage response
+
+                if (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) {
+
+                    // UPDATE 3 device
+
+                    Message u1 = new Message(Message.Type.UPDATE, decKey, decValue, decVersion, localPort, coordinator);
+                    Message u2 = new Message(Message.Type.UPDATE, decKey, decValue, decVersion, localPort, replicA);
+                    Message u3 = new Message(Message.Type.UPDATE, decKey, decValue, decVersion, localPort, replicB);
+
+
+                    sendLooper.mHandler.post(new SendThread(u1));
+                    sendLooper.mHandler.post(new SendThread(u2));
+                    sendLooper.mHandler.post(new SendThread(u3));
+
+
+                    // repackage cursor to response
+
+                    ((MatrixCursor) cur).addRow(new String[]{
+                            decKey,
+                            decValue
+                    });
+
+                    return cur;
+
+                } else {
+
+                    // Fail to query
+                    return null;
+
+                }
+        }
+
     }
 
     @Override
@@ -228,59 +577,6 @@ public class SimpleDynamoProvider extends ContentProvider {
         return rows;
     }
 
-    private <P, R> R requestCoordination(int flag, P parameters) {
-
-        // There are 4 states for request coordination:
-        // 1. Identify the node that holds the key.
-        // 2. Sending request to coordinator.
-        // 3. Wait for response from coordinator.
-        // 4. Process reply and repackage response.
-
-
-        // When request is insert(flag=0), the type P is ContentValues
-        // When request is query(flag=1), the type P is String
-        // When request is delete(flag=2), the type P is String
-
-        switch (flag) {
-            case 0:
-//                Uri u = null;
-//                Callable<Uri> insert = new ProcessInsert((ContentValues)parameters);
-//                Future<Uri> ins = requestExecPool.submit(insert);
-//                try {
-//                    u = ins.get();
-//                } catch (InterruptedException | ExecutionException e) {
-//                    Log.e(TAG, "insert error");
-//                    e.printStackTrace();
-//                }
-//                return (R)u;
-                return null;
-            case 1:
-                Cursor cur = null;
-                Callable<Cursor> query = new ProcessQuery(String.valueOf(parameters));
-                Future<Cursor> que = requestExecPool.submit(query);
-                try {
-                    cur = que.get();
-                } catch (InterruptedException | ExecutionException e) {
-                    Log.e(TAG, "query error");
-                    e.printStackTrace();
-                }
-                return (R) cur;
-            case 2:
-                int i = 0;
-                Callable<Integer> delete = new ProcessDelete(String.valueOf(parameters));
-                Future<Integer> del = requestExecPool.submit(delete);
-                try {
-                    i = del.get();
-                } catch (InterruptedException | ExecutionException e) {
-                    Log.e(TAG, "delete error");
-                    e.printStackTrace();
-                }
-                return (R) Integer.valueOf(i);
-            default:
-                return null;
-        }
-
-    }
 
     /**
      * query the version of key from database, where the parameter is hash key of selection.
@@ -447,25 +743,23 @@ public class SimpleDynamoProvider extends ContentProvider {
             // Create socket
             socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), msg.forwardPort);
 
-            socket.setSoTimeout(500);
+            socket.setSoTimeout(5000);
 
             // Create out stream
-            ObjectOutputStream out = new ObjectOutputStream(
-                    new BufferedOutputStream(socket.getOutputStream()));
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
             // Write message
-            out.writeObject(msg);
+            out.writeUTF(SimpleDynamoUtils.toJSON(msg));
             out.flush();
 
-            Log.d(TAG, "Sent to " + msg.forwardPort + ", Waiting for reply...");
+            Log.d(TAG, "Sent INSERT to " + msg.forwardPort + ", Waiting for reply...");
 
             // Wait back
-            ObjectInputStream in = new ObjectInputStream(
-                    new BufferedInputStream(socket.getInputStream()));
+            DataInputStream in = new DataInputStream(socket.getInputStream());
 
-            Message reply = (Message) in.readObject();
+            Message reply = SimpleDynamoUtils.parseJSON(in.readUTF());
 
-            if (reply.msgType == Message.type.ACK) {
+            if (reply.msgType.equals(Message.Type.ACK)) {
                 Log.d(TAG, "ACK - from " + msg.forwardPort);
                 result = true;
             }
@@ -473,7 +767,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             in.close();
             out.close();
 
-        } catch (ClassNotFoundException | IOException e) {
+        } catch (IOException e) {
 
             Log.e(TAG, e.toString());
             e.printStackTrace();
@@ -495,6 +789,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     }
 
+
     /**
      * Client for sending query message
      *
@@ -515,25 +810,23 @@ public class SimpleDynamoProvider extends ContentProvider {
             // Create socket
             socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), msg.forwardPort);
 
-            socket.setSoTimeout(500);
+            socket.setSoTimeout(5000);
 
             // Create out stream
-            ObjectOutputStream out = new ObjectOutputStream(
-                    new BufferedOutputStream(socket.getOutputStream()));
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
             // Write message
-            out.writeObject(msg);
+            out.writeUTF(SimpleDynamoUtils.toJSON(msg));
             out.flush();
 
-            Log.d(TAG, "Sent to " + msg.forwardPort + ", Waiting for reply...");
+            Log.d(TAG, "Sent QUERY to " + msg.forwardPort + ", Waiting for reply...");
 
             // Wait back
-            ObjectInputStream in = new ObjectInputStream(
-                    new BufferedInputStream(socket.getInputStream()));
+            DataInputStream in = new DataInputStream(socket.getInputStream());
 
-            Message reply = (Message) in.readObject();
+            Message reply = SimpleDynamoUtils.parseJSON(in.readUTF());
 
-            if (reply.msgType == Message.type.ACK) {
+            if (reply.msgType.equals(Message.Type.ACK)) {
                 Pair<String, Integer> p;
                 Log.d(TAG, "ACK - from " + msg.forwardPort);
                 for (String k : reply.batch.keySet()) {
@@ -545,7 +838,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             in.close();
             out.close();
 
-        } catch (ClassNotFoundException | IOException e) {
+        } catch (IOException e) {
 
             Log.e(TAG, e.toString());
             e.printStackTrace();
@@ -567,6 +860,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     }
 
+
     /**
      * send delete message
      *
@@ -581,7 +875,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             // Create socket
             socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), msg.forwardPort);
 
-            socket.setSoTimeout(500);
+            socket.setSoTimeout(5000);
 
             // Create out stream
             ObjectOutputStream out = new ObjectOutputStream(
@@ -599,7 +893,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
             Message reply = (Message) in.readObject();
 
-            if (reply.msgType == Message.type.ACK) {
+            if (reply.msgType.equals(Message.Type.ACK)) {
                 Log.d(TAG, "ACK - from " + msg.forwardPort);
 
                 in.close();
@@ -634,445 +928,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 
 
     /**
-     * Class of Callable function to handle query
-     */
-    private class ProcessQuery implements Callable<Cursor> {
-
-        String key;
-        String hashKey;
-        Hashtable<String, Pair<String, Integer>> decision = new Hashtable<String, Pair<String, Integer>>() {
-        };
-
-        public ProcessQuery(String selection) {
-            key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
-            hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
-        }
-
-        @Override
-        public Cursor call() {
-            Cursor cur = null;
-
-            switch (key) {
-                case "@":
-
-                    Log.d(TAG, "QUERY @");
-
-                    cur = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, "@", null, null);
-
-                    Log.d(TAG, "QUERY @ finished");
-
-                    return cur;
-
-                case "*":
-
-                    Cursor cursor = null;
-                    cur = new MatrixCursor(new String[]{
-                            DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY,
-                            DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE});
-
-                    Log.d(TAG, "QUERY *");
-
-                    cursor = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, "@", null, null);
-
-                    if (cursor != null) {
-                        int keyIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-                        int valueIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                        int versionIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
-                        if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
-                            if (cursor.moveToFirst()) {
-                                do {
-
-                                    // Put into hashtable firstly
-                                    decision.put(
-                                            cursor.getString(keyIndex),
-                                            new Pair<String, Integer>(cursor.getString(valueIndex),
-                                                    cursor.getInt(versionIndex))
-                                    );
-                                    // ((MatrixCursor) cur).addRow(new String[]{
-                                    //       cursor.getString(keyIndex), cursor.getString(valueIndex)});
-
-                                } while (cursor.moveToNext());
-                            }
-                        }
-                        cursor.close();
-                    }
-
-                    for (int n = 0; n < membership.REMOTEAVD.size(); n++) {
-                        int forward = membership.REMOTEAVD.get(n) * 2;
-                        if (forward == localPort) continue;
-
-                        Message queMsg = new Message();
-                        queMsg.msgType = Message.type.QUERY;
-                        queMsg.key = "\"@\"";
-                        queMsg.forwardPort = forward;
-
-                        // send to everyone and wait response and plus result
-
-                        cursor = sendQuery(queMsg);
-
-                        if (cursor != null) {
-                            int keyIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-                            int valueIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                            int versionIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
-                            if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
-                                if (cursor.moveToFirst()) {
-                                    do {
-
-                                        // If key not in hashtable, put this in
-                                        // Else negotiation the final decision
-
-                                        String k = cursor.getString(keyIndex);
-                                        String newU = cursor.getString(valueIndex);
-                                        int newV = cursor.getInt(versionIndex);
-
-                                        Pair<String, Integer> p = decision.get(k);
-                                        if (p == null) {
-                                            decision.put(k, new Pair<String, Integer>(newU, newV));
-                                        } else {
-
-                                            int oldV = p.second;
-
-                                            if (newV > oldV) {
-                                                decision.put(k, new Pair<String, Integer>(newU, newV));
-                                            }
-                                        }
-
-                                    } while (cursor.moveToNext());
-                                }
-                            }
-                            cursor.close();
-                        }
-                    }
-
-                    for (String k : decision.keySet()) {
-                        Pair<String, Integer> p = decision.get(k);
-                        String u = p.first;
-                        ((MatrixCursor) cur).addRow(new String[]{k, u});
-                    }
-
-                    return cur;
-
-                default:
-
-                    // Step 1: Identify the node that holds the key.
-                    int[] c = membership.findPreferenceList(key);
-                    int coordinator = c[0] * 2;
-                    int replicA = c[1] * 2;
-                    int replicB = c[2] * 2;
-
-                    // When item is not belonging to current node
-                    // forward the item to node which it belongs to
-                    // When item is belonging to current node
-                    // query data from local database firstly
-                    // query data from replication
-                    // then decide the final version data.
-
-                    int replyNum = 0;
-                    Message decision = new Message();
-                    decision.version = -1;
-                    cur = new MatrixCursor(new String[]{
-                            DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY,
-                            DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE
-                    });
-                    Cursor tempCurs;
-
-                    if (localPort != coordinator) {
-
-                        Message ins = new Message();
-                        ins.forwardPort = coordinator;
-                        ins.msgType = Message.type.QUERY;
-                        ins.key = key;
-
-                        // Step 2: sending requests to coordinator.
-
-                        // sendLooper.mHandler.post(new SendThread(ins));
-                        Log.d(TAG, "QUERY -- FORWARD:" + coordinator + "KEY:" + key);
-
-                        tempCurs = sendQuery(ins);
-
-                        if (tempCurs != null) {
-
-                            replyNum++;
-
-                            int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-                            int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                            int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
-
-                            if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
-                                if (tempCurs.moveToFirst()) {
-                                    if (tempCurs.getInt(versionIndex) > decision.version) {
-                                        decision.key = tempCurs.getString(keyIndex);
-                                        decision.value = tempCurs.getString(valueIndex);
-                                        decision.version = tempCurs.getInt(versionIndex);
-                                    }
-                                }
-                            }
-
-                            tempCurs.close();
-                        }
-
-                    } else {
-
-                        // Step 2: sending requests to coordinator.
-
-                        tempCurs = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, key, null, null);
-
-                        if (tempCurs != null) {
-
-                            replyNum++;
-
-                            int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-                            int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                            int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
-
-                            if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
-                                if (tempCurs.moveToFirst()) {
-                                    if (tempCurs.getInt(versionIndex) > decision.version) {
-                                        decision.key = tempCurs.getString(keyIndex);
-                                        decision.value = tempCurs.getString(valueIndex);
-                                        decision.version = tempCurs.getInt(versionIndex);
-                                    }
-                                }
-                            }
-
-                            tempCurs.close();
-                        }
-
-                    }
-
-                    // Step 3: waiting for response from coordinator
-                    // In there, wait another R-1 reply from replication
-                    // If repA success, replyNum ++
-                    // If repB success, replyNum ++
-
-                    Message que1 = new Message();
-                    que1.forwardPort = replicA;
-                    que1.msgType = Message.type.QUERY;
-                    que1.key = key;
-
-                    Log.d(TAG, "QUERY -- REPLICA:" + replicA + "KEY:" + key);
-
-                    tempCurs = sendQuery(que1);
-
-                    if (tempCurs != null) {
-
-                        replyNum++;
-
-                        int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-                        int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                        int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
-
-                        if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
-                            if (tempCurs.moveToFirst()) {
-
-                                if (tempCurs.getInt(versionIndex) > decision.version) {
-                                    decision.key = tempCurs.getString(keyIndex);
-                                    decision.value = tempCurs.getString(valueIndex);
-                                    decision.version = tempCurs.getInt(versionIndex);
-                                }
-                            }
-                        }
-
-                        tempCurs.close();
-                    }
-
-
-                    Message que2 = new Message();
-                    que2.forwardPort = replicB;
-                    que2.msgType = Message.type.QUERY;
-                    que2.key = key;
-
-                    Log.d(TAG, "QUERY -- REPLICA:" + replicB + "KEY:" + key);
-
-                    tempCurs = sendQuery(que2);
-
-                    if (tempCurs != null) {
-
-                        replyNum++;
-
-                        int keyIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-                        int valueIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                        int versionIndex = tempCurs.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
-
-                        if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
-                            if (tempCurs.moveToFirst()) {
-
-                                if (tempCurs.getInt(versionIndex) > decision.version) {
-                                    decision.key = tempCurs.getString(keyIndex);
-                                    decision.value = tempCurs.getString(valueIndex);
-                                    decision.version = tempCurs.getInt(versionIndex);
-                                }
-                            }
-                        }
-
-                        tempCurs.close();
-                    }
-
-
-                    // Step 4: process reply and repackage response
-
-                    if (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) {
-
-                        // UPDATE 3 device
-
-                        Message u1 = new Message();
-                        u1.msgType = Message.type.UPDATE;
-                        u1.forwardPort = coordinator;
-                        u1.key = decision.key;
-                        u1.value = decision.value;
-                        u1.version = decision.version;
-
-                        Message u2 = new Message();
-                        u2.msgType = Message.type.UPDATE;
-                        u2.forwardPort = coordinator;
-                        u2.key = decision.key;
-                        u2.value = decision.value;
-                        u2.version = decision.version;
-
-                        Message u3 = new Message();
-                        u3.msgType = Message.type.UPDATE;
-                        u3.forwardPort = coordinator;
-                        u3.key = decision.key;
-                        u3.value = decision.value;
-                        u3.version = decision.version;
-
-                        sendLooper.mHandler.post(new SendThread(u1));
-                        sendLooper.mHandler.post(new SendThread(u2));
-                        sendLooper.mHandler.post(new SendThread(u3));
-
-
-                        // repackage cursor to response
-
-                        ((MatrixCursor) cur).addRow(new String[]{
-                                decision.key,
-                                decision.value
-                        });
-
-                        return cur;
-
-                    } else {
-
-                        // Fail to query
-                        return null;
-
-                    }
-            }
-        }
-    }
-
-    private class ProcessDelete implements Callable<Integer> {
-
-        String key;
-        String hashKey;
-
-        public ProcessDelete(String selection) {
-            key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
-            hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
-        }
-
-        @Override
-        public Integer call() {
-            int i = 0;
-
-            switch (key) {
-                case "@":
-
-                    Log.d(TAG, "DELETE @");
-
-                    synchronized (dbLock) {
-                        i = db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, null);
-                    }
-
-                    Log.d(TAG, "DELETE @ finished");
-
-                    return i;
-
-                case "*":
-
-                    Log.d(TAG, "DELETE *");
-
-                    synchronized (dbLock) {
-                        int rows = 0;
-                        rows = db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, null);
-                        i += rows;
-                    }
-
-                    for (int n = 0; n < membership.REMOTEAVD.size(); n++) {
-                        int forward = membership.REMOTEAVD.get(n) * 2;
-                        if (forward == localPort) continue;
-
-                        Message delMsg = new Message();
-                        delMsg.msgType = Message.type.DELETE;
-                        delMsg.key = "\"@\"";
-                        delMsg.forwardPort = forward;
-
-                        // send to everyone and wait response and plus result
-                    }
-
-                    return i;
-
-                default:
-
-                    // Step 1: Identify the node that holds the key.
-                    int[] c = membership.findPreferenceList(key);
-
-                    // When item is not belonging to current node
-                    // forward the item to node which it belongs to
-                    // When item is belonging to current node
-                    // insert the item into local database firstly
-                    // then notify the next 2 successor to replicate.
-
-                    int coordinator = c[0] * 2;
-
-                    int replyNum = 0;
-
-                    if (localPort != coordinator) {
-
-                        Message del = new Message();
-                        del.forwardPort = coordinator;
-                        del.msgType = Message.type.DELETE;
-                        del.key = key;
-
-                        // Step 2: sending requests to coordinator.
-                        // sendLooper.mHandler.post(new SendThread(ins));
-                        Log.d(TAG, "DELETE -- FORWARD:" + coordinator + "KEY:" + key);
-
-
-                        // Step 3: waiting for response from coordinator
-
-                        if (sendDelete(del)) {
-                            replyNum++;
-                        }
-
-                        // Step 4: process reply and repackage response
-
-                    } else {
-
-
-                        // Step 2: sending requests to coordinator.
-                        localDelete(SimpleDynamoUtils.DATABASE_CONTENT_URL, key, null);
-
-                        replyNum++;
-
-                    }
-
-                    // Step 3: waiting for response from coordinator
-                    // In there, wait another W-1 reply from replication
-                    // If repA success, replyNum ++
-                    // If repB success, replyNum ++
-                    // Step 4: process reply and repackage response
-                    return (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) ? i : 0;
-            }
-        }
-    }
-
-    /**
      * Socket Server
      */
     public class Server implements Runnable {
 
         Context context;
-        private String TAG = Server.class.getSimpleName();
 
         public Server(Context c) {
             this.context = c;
@@ -1091,171 +951,75 @@ public class SimpleDynamoProvider extends ContentProvider {
                 e.printStackTrace();
             }
 
-
             while (true) {
                 try {
 
                     clientSocket = serverSocket.accept();
-                    clientSocket.setSoTimeout(1000);
 
-                    ObjectInputStream input = new ObjectInputStream(
-                            new BufferedInputStream(clientSocket.getInputStream()));
+                    DataInputStream input = new DataInputStream(clientSocket.getInputStream());
 
-                    Message msg = (Message) input.readObject();
+                    Message msg = SimpleDynamoUtils.parseJSON(input.readUTF());
 
                     Log.d(TAG, "Received Message: " + msg.msgType + ", From: " + msg.originPort);
 
-                    String key;
-                    String hashKey;
-                    String value;
-                    int version;
-                    Message reply;
-
                     switch (msg.msgType) {
 
-                        case INSERT:
+                        case Message.Type.INSERT:
 
-                            key = msg.key;
-                            value = msg.value;
+                            Message insertAck = new Message(Message.Type.ACK, null, null, -1, -1, -1);
 
-                            ContentValues cv = new ContentValues();
-                            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
-                            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
-
-                            Uri u = localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, cv);
-
-                            Log.d(TAG, "INSERT " + key + " in " + localPort + ", send back ACK");
-
-
-                            reply = new Message();
-                            reply.msgType = Message.type.ACK;
-
-                            // Create out stream
-                            ObjectOutputStream iOut = new ObjectOutputStream(
-                                    new BufferedOutputStream(clientSocket.getOutputStream()));
-
-                            // Write message
-                            iOut.writeObject(reply);
-                            iOut.flush();
-
-                            Log.d(TAG, "Reply sent");
-
-                            break;
-
-                        case REPLICA:
-
-                            key = msg.key;
-                            value = msg.value;
-
-                            ContentValues c = new ContentValues();
-                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
-                            c.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
-
-                            Uri q = localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, c);
-
-                            Log.d(TAG, "REPLICA " + key + " in " + localPort + ", send back ACK");
-
-
-                            reply = new Message();
-                            reply.msgType = Message.type.ACK;
-
-                            // Create out stream
-                            ObjectOutputStream rOut = new ObjectOutputStream(
-                                    new BufferedOutputStream(clientSocket.getOutputStream()));
-
-                            // Write message
-                            rOut.writeObject(reply);
-                            rOut.flush();
-
-                            Log.d(TAG, "Reply sent");
-
-                            break;
-
-                        case DELETE:
-
-
-                            // For Delete
-                            // Situation 1:
-                            // When received key == "@", then delete locally, reply the ACK with
-                            // deleted rows and successor;
-                            //
-                            // Situation 2:
-                            // When received key == particular, then delete and return the rows.
-
-                            key = msg.key;
-
-                            int rows = localDelete(SimpleDynamoUtils.DATABASE_CONTENT_URL, key, null);
-
-                            reply = new Message();
-                            reply.msgType = Message.type.ACK;
-                            reply.version = rows;
-
-                            // Create out stream
-                            ObjectOutputStream dOut = new ObjectOutputStream(
-                                    new BufferedOutputStream(clientSocket.getOutputStream()));
-
-                            // Write message
-                            dOut.writeObject(reply);
-                            dOut.flush();
-
-                            Log.d(TAG, "Reply finished");
-
-                            break;
-
-                        case QUERY:
-
-                            key = msg.key;
-
-                            reply = new Message();
-                            reply.msgType = Message.type.ACK;
-
-                            Cursor cur = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, key, null, null);
-
-                            if (cur != null) {
-
-                                int keyIndex = cur.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
-                                int valueIndex = cur.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
-                                int versionIndex = cur.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
-
-                                if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
-                                    if (cur.moveToFirst()) {
-                                        do {
-                                            Pair<String, Integer> v = new Pair<>(cur.getString(valueIndex), cur.getInt(versionIndex));
-                                            reply.batch.put(cur.getString(keyIndex), v);
-                                        } while (cur.moveToNext());
-                                    }
-                                }
-                                cur.close();
+                            try {
+                                // Create out stream
+                                DataOutputStream iOut = new DataOutputStream(clientSocket.getOutputStream());
+                                // Write message
+                                iOut.writeUTF(SimpleDynamoUtils.toJSON(insertAck));
+                                iOut.flush();
+                            } catch (IOException e) {
+                                e.printStackTrace();
                             }
 
-                            // Create out stream
-                            ObjectOutputStream qOut = new ObjectOutputStream(
-                                    new BufferedOutputStream(clientSocket.getOutputStream()));
+                            Log.d(TAG, "INSERT Reply sent");
 
-                            // Write message
-                            qOut.writeObject(reply);
-                            qOut.flush();
-
-                            Log.d(TAG, "Reply finished");
+                            processLooper.mHandler.post(new OnReceiveInsert(clientSocket, msg));
 
                             break;
 
-                        case UPDATE:
+                        case Message.Type.REPLICA:
 
-                            key = msg.key;
-                            hashKey = SimpleDynamoUtils.genHash(key);
-                            value = msg.value;
-                            version = msg.version;
+                            Message replicaAck = new Message(Message.Type.ACK, null, null, -1, -1, -1);
 
-                            ContentValues up = new ContentValues();
-                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
-                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY, hashKey);
-                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
-                            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION, version);
+                            try {
+                                clientSocket.setSoTimeout(1000);
+                                // Create out stream
+                                DataOutputStream iOut = new DataOutputStream(clientSocket.getOutputStream());
+                                // Write message
+                                iOut.writeUTF(SimpleDynamoUtils.toJSON(replicaAck));
+                                iOut.flush();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
 
-                            update(SimpleDynamoUtils.DATABASE_CONTENT_URL, up,
-                                    DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY,
-                                    new String[]{hashKey});
+                            Log.d(TAG, "REPLICA Reply sent");
+
+                            processLooper.mHandler.post(new OnReceiveReplica(clientSocket, msg));
+
+                            break;
+
+                        case Message.Type.DELETE:
+
+                            processLooper.mHandler.post(new OnReceiveDelete(clientSocket, msg));
+
+                            break;
+
+                        case Message.Type.QUERY:
+
+                            processLooper.mHandler.post(new OnReceiveQuery(clientSocket, msg));
+
+                            break;
+
+                        case Message.Type.UPDATE:
+
+                            processLooper.mHandler.post(new OnReceiveUpdate(clientSocket, msg));
 
                             break;
 
@@ -1265,16 +1029,193 @@ public class SimpleDynamoProvider extends ContentProvider {
                             clientSocket.close();
 
                             break;
-
                     }
 
-
-                } catch (NullPointerException | ClassNotFoundException | IOException e) {
+                } catch (NullPointerException | IOException e) {
                     Log.e(TAG, e.toString());
                     e.printStackTrace();
                 }
 
             }
+        }
+
+        private String TAG = localPort + " " + Server.class.getSimpleName();
+
+
+    }
+
+
+    public class OnReceiveInsert implements Runnable {
+
+        Socket socket;
+        String key;
+        String value;
+
+        public OnReceiveInsert(Socket s, Message msg) {
+            this.socket = s;
+            this.key = msg.key;
+            this.value = msg.value;
+        }
+
+        @Override
+        public void run() {
+            ContentValues cv = new ContentValues();
+            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
+            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
+
+            localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, cv);
+
+            Log.d(TAG, "INSERT " + key + " in " + localPort + ", send back ACK");
+
+        }
+    }
+
+
+    public class OnReceiveReplica implements Runnable {
+
+        Socket socket;
+        String key;
+        String value;
+
+        public OnReceiveReplica(Socket s, Message msg) {
+            this.socket = s;
+            this.key = msg.key;
+            this.value = msg.value;
+        }
+
+        @Override
+        public void run() {
+            ContentValues cv = new ContentValues();
+            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
+            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
+
+            localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, cv);
+
+            Log.d(TAG, "REPLICA " + key + " in " + localPort + ", send back ACK");
+
+        }
+    }
+
+
+    public class OnReceiveQuery implements Runnable {
+
+        Socket socket;
+        String key;
+
+        public OnReceiveQuery(Socket s, Message msg) {
+            this.socket = s;
+            this.key = msg.key;
+        }
+
+        @Override
+        public void run() {
+            Cursor cur = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, key, null, null);
+
+            Log.d(TAG, "QUERY " + key + " in " + localPort + ", send back ACK");
+
+            Message reply = new Message(Message.Type.ACK, null, null, -1, -1, -1);
+
+            if (cur != null) {
+
+                int keyIndex = cur.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                int valueIndex = cur.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                int versionIndex = cur.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+
+                if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                    if (cur.moveToFirst()) {
+                        do {
+                            Pair<String, Integer> v = new Pair<>(cur.getString(valueIndex), cur.getInt(versionIndex));
+                            reply.batch.put(cur.getString(keyIndex), v);
+                        } while (cur.moveToNext());
+                    }
+                }
+                cur.close();
+            }
+
+            try {
+                socket.setSoTimeout(1000);
+                // Create out stream
+                DataOutputStream iOut = new DataOutputStream(socket.getOutputStream());
+                // Write message
+                iOut.writeUTF(SimpleDynamoUtils.toJSON(reply));
+                iOut.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            Log.d(TAG, "QUERY Reply sent");
+        }
+    }
+
+
+    public class OnReceiveUpdate implements Runnable {
+
+        Socket socket;
+        String key;
+        String value;
+        String hashKey;
+        int version;
+
+        public OnReceiveUpdate(Socket s, Message msg) {
+            this.socket = s;
+            this.key = msg.key;
+            this.hashKey = SimpleDynamoUtils.genHash(key);
+            this.value = msg.value;
+            this.version = msg.version;
+        }
+
+        @Override
+        public void run() {
+
+            try {
+                socket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            ContentValues up = new ContentValues();
+            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
+            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY, hashKey);
+            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
+            up.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION, version);
+
+            update(SimpleDynamoUtils.DATABASE_CONTENT_URL, up,
+                    DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY,
+                    new String[]{hashKey});
+        }
+    }
+
+
+    public class OnReceiveDelete implements Runnable {
+
+        Socket socket;
+        String key;
+
+        public OnReceiveDelete(Socket s, Message msg) {
+            this.socket = s;
+            this.key = msg.key;
+        }
+
+        @Override
+        public void run() {
+            int rows = localDelete(SimpleDynamoUtils.DATABASE_CONTENT_URL, key, null);
+
+            Log.d(TAG, "DELETE " + key + " in " + localPort + ", send back ACK");
+
+            Message reply = new Message(Message.Type.ACK, null, null, rows, -1, -1);
+
+            try {
+                socket.setSoTimeout(1000);
+                // Create out stream
+                DataOutputStream iOut = new DataOutputStream(socket.getOutputStream());
+                // Write message
+                iOut.writeUTF(SimpleDynamoUtils.toJSON(reply));
+                iOut.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            Log.d(TAG, "DELETE Reply sent");
         }
     }
 }
