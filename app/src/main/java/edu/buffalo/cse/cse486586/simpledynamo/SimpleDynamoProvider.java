@@ -656,7 +656,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         long newRowId;
         synchronized (dbLock) {
-            newRowId = db.insertOrThrow(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, values);
+            newRowId = db.replace(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, values);
         }
 
         Log.d(TAG, "Insert:(" + newRowId + ") Version: " + version + " KEY: " + key + " VALUE: " + value + " HASHKEY: " + hashKey);
