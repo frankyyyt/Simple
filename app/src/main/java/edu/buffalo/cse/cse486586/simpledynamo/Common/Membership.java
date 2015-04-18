@@ -14,8 +14,15 @@ import edu.buffalo.cse.cse486586.simpledynamo.Utils.SimpleDynamoUtils;
 public class Membership {
 
     public ArrayList<Integer> REMOTEAVD = new ArrayList<>(Arrays.asList(5562, 5556, 5554, 5558, 5560));
-    String begin = SimpleDynamoUtils.genHash(String.valueOf(REMOTEAVD.get(0)));
-    String end = SimpleDynamoUtils.genHash(String.valueOf(REMOTEAVD.get(4)));
+    public ArrayList<String> REMOTEAVD_HASH = new ArrayList<>(Arrays.asList(
+            "177ccecaec32c54b82d5aaafc18a2dadb753e3b1",
+            "208f7f72b198dadd244e61801abe1ec3a4857bc9",
+            "33d6357cfaaf0f72991b0ecd8c56da066613c089",
+            "abf0fd8db03e5ecb199a9b82929e9db79b909643",
+            "c25ddd596aa7c81fa12378fa725f706d54325d12"
+    ));
+    String begin = REMOTEAVD_HASH.get(0);
+    String end = REMOTEAVD_HASH.get(4);
 
     public int findCoordinator(String key) {
 
@@ -26,7 +33,7 @@ public class Membership {
             // hashkey < 5562 or 5556 or 5554 or 5558 or 5560: return successor port
             // hashkey > 5560: return 5562
 
-            String cur = SimpleDynamoUtils.genHash(String.valueOf(REMOTEAVD.get(i)));
+            String cur = REMOTEAVD_HASH.get(i);
 
             if (hashKey.compareToIgnoreCase(end) > 0)
                 return 0;
@@ -48,7 +55,7 @@ public class Membership {
             // hashkey < 5562 or 5556 or 5554 or 5558 or 5560: return successor port
             // hashkey > 5560: return 5562
 
-            String cur = SimpleDynamoUtils.genHash(String.valueOf(REMOTEAVD.get(i)));
+            String cur = REMOTEAVD_HASH.get(i);
 
             if (hashKey.compareToIgnoreCase(end) > 0) {
                 r[0] = REMOTEAVD.get(0);

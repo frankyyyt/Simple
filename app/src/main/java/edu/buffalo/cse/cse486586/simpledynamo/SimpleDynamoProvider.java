@@ -11,13 +11,9 @@ import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.util.Pair;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -73,9 +69,8 @@ public class SimpleDynamoProvider extends ContentProvider {
     }
 
     public int processDelete(Uri uri, String selection, String[] selectionArgs) {
-        String key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
-        String hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
 
+        String key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
 
         int i = 0;
 
@@ -97,16 +92,14 @@ public class SimpleDynamoProvider extends ContentProvider {
                 Log.d(TAG, "DELETE *");
 
                 synchronized (dbLock) {
-                    int rows = 0;
-                    rows = db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, null);
-                    i += rows;
+                    i += db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, null);
                 }
 
                 for (int n = 0; n < membership.REMOTEAVD.size(); n++) {
                     int forward = membership.REMOTEAVD.get(n) * 2;
                     if (forward == localPort) continue;
 
-                    Message delMsg = new Message(Message.Type.DELETE, "\"@\"", null, -1, localPort, forward);
+                    Message delMsg = new Message(Message.Type.DELETE, "@", null, -1, localPort, forward);
 
                     // send to everyone and wait response and plus result
                 }
@@ -125,6 +118,8 @@ public class SimpleDynamoProvider extends ContentProvider {
                 // then notify the next 2 successor to replicate.
 
                 int coordinator = c[0] * 2;
+                int replicA = c[1] * 2;
+                int replicB = c[2] * 2;
 
                 int replyNum = 0;
 
@@ -133,7 +128,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     Message del = new Message(Message.Type.DELETE, key, null, -1, localPort, coordinator);
 
                     // Step 2: sending requests to coordinator.
-                    Log.d(TAG, "DELETE -- FORWARD:" + coordinator + "KEY:" + key);
+                    Log.d(TAG, "DELETE -- FORWARD:" + coordinator + " KEY:" + key);
 
                     // Step 3: waiting for response from coordinator
 
@@ -156,6 +151,13 @@ public class SimpleDynamoProvider extends ContentProvider {
                 // In there, wait another W-1 reply from replication
                 // If repA success, replyNum ++
                 // If repB success, replyNum ++
+
+                Message del1 = new Message(Message.Type.DELETE, key, null, -1, localPort, replicA);
+                Message del2 = new Message(Message.Type.DELETE, key, null, -1, localPort, replicB);
+
+                if (sendDelete(del1)) replyNum++;
+                if (sendDelete(del2)) replyNum++;
+
                 // Step 4: process reply and repackage response
                 return (replyNum >= SimpleDynamoUtils.READ_CONFIRM_NODE_NUM) ? i : 0;
         }
@@ -280,6 +282,8 @@ public class SimpleDynamoProvider extends ContentProvider {
     public Cursor processQuery(Uri uri, String[] projection, String selection,
                                String[] selectionArgs, String sortOrder) {
         Cursor cur = null;
+        Cursor cursor = null;
+
         String key = (selection != null && selection.contains("\"")) ? selection.substring(1, selection.length() - 1) : selection;
         String hashKey = (key != null) ? SimpleDynamoUtils.genHash(key) : "";
         Hashtable<String, Pair<String, Integer>> decision = new Hashtable<String, Pair<String, Integer>>() {
@@ -289,8 +293,25 @@ public class SimpleDynamoProvider extends ContentProvider {
             case "@":
 
                 Log.d(TAG, "QUERY @");
+                cur = new MatrixCursor(new String[]{
+                        DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY,
+                        DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE});
 
-                cur = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, "@", null, null);
+                cursor = localQuery(SimpleDynamoUtils.DATABASE_CONTENT_URL, null, "@", null, null);
+
+                if (cursor != null) {
+                    int keyIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+                    int valueIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
+                    int versionIndex = cursor.getColumnIndex(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+                    if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                        if (cursor.moveToFirst()) {
+                            do {
+                                ((MatrixCursor) cur).addRow(new String[]{cursor.getString(keyIndex), cursor.getString(valueIndex)});
+                            } while (cursor.moveToNext());
+                        }
+                    }
+                    cursor.close();
+                }
 
                 Log.d(TAG, "QUERY @ finished");
 
@@ -298,7 +319,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
             case "*":
 
-                Cursor cursor = null;
                 cur = new MatrixCursor(new String[]{
                         DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY,
                         DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE});
@@ -318,8 +338,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                                 // Put into hashtable firstly
                                 decision.put(
                                         cursor.getString(keyIndex),
-                                        new Pair<>(cursor.getString(valueIndex),
-                                                cursor.getInt(versionIndex))
+                                        new Pair<>(cursor.getString(valueIndex), cursor.getInt(versionIndex))
                                 );
 
                             } while (cursor.moveToNext());
@@ -332,7 +351,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     int forward = membership.REMOTEAVD.get(n) * 2;
                     if (forward == localPort) continue;
 
-                    Message queMsg = new Message(Message.Type.QUERY, "\"@\"", null, -1, localPort, forward);
+                    Message queMsg = new Message(Message.Type.QUERY, "@", null, -1, localPort, forward);
 
                     // send to everyone and wait response and plus result
 
@@ -667,8 +686,8 @@ public class SimpleDynamoProvider extends ContentProvider {
                         true,
                         DatabaseSchema.DatabaseEntry.TABLE_NAME,
                         new String[]{
-                                DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY,
                                 DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY,
+                                DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY,
                                 DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE,
                                 DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION
                         },
@@ -715,14 +734,18 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         if (selection.equals("@")) {
             synchronized (dbLock) {
-                i = delete(uri, selection, null);
+                i = db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, null);
             }
         } else {
             String hashKey = SimpleDynamoUtils.genHash(selection);
 
+
             synchronized (dbLock) {
-                i = delete(uri, DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY, new String[]{hashKey});
+                i = db.delete(DatabaseSchema.DatabaseEntry.TABLE_NAME, DatabaseSchema.DatabaseEntry.COLUMN_NAME_HASHKEY + " = ?", new String[]{hashKey});
             }
+
+            Log.d(TAG, "DELETE Success: KEY:" + selection);
+
         }
 
         return i;
@@ -878,20 +901,18 @@ public class SimpleDynamoProvider extends ContentProvider {
             socket.setSoTimeout(5000);
 
             // Create out stream
-            ObjectOutputStream out = new ObjectOutputStream(
-                    new BufferedOutputStream(socket.getOutputStream()));
+            DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
             // Write message
-            out.writeObject(msg);
+            out.writeUTF(SimpleDynamoUtils.toJSON(msg));
             out.flush();
 
             Log.d(TAG, "Sent DELETE to " + msg.forwardPort + ", Waiting for reply...");
 
             // Wait back
-            ObjectInputStream in = new ObjectInputStream(
-                    new BufferedInputStream(socket.getInputStream()));
+            DataInputStream in = new DataInputStream(socket.getInputStream());
 
-            Message reply = (Message) in.readObject();
+            Message reply = SimpleDynamoUtils.parseJSON(in.readUTF());
 
             if (reply.msgType.equals(Message.Type.ACK)) {
                 Log.d(TAG, "ACK - from " + msg.forwardPort);
@@ -905,7 +926,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             in.close();
             out.close();
 
-        } catch (ClassNotFoundException | IOException e) {
+        } catch (IOException e) {
 
             Log.e(TAG, e.toString());
             e.printStackTrace();
@@ -1006,6 +1027,20 @@ public class SimpleDynamoProvider extends ContentProvider {
                             break;
 
                         case Message.Type.DELETE:
+
+                            Message deleteAck = new Message(Message.Type.ACK, null, null, -1, -1, -1);
+
+                            try {
+                                // Create out stream
+                                DataOutputStream iOut = new DataOutputStream(clientSocket.getOutputStream());
+                                // Write message
+                                iOut.writeUTF(SimpleDynamoUtils.toJSON(deleteAck));
+                                iOut.flush();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+
+                            Log.d(TAG, "DELETE Reply sent");
 
                             processLooper.mHandler.post(new OnReceiveDelete(clientSocket, msg));
 
@@ -1198,24 +1233,10 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         @Override
         public void run() {
-            int rows = localDelete(SimpleDynamoUtils.DATABASE_CONTENT_URL, key, null);
+            localDelete(SimpleDynamoUtils.DATABASE_CONTENT_URL, key, null);
 
             Log.d(TAG, "DELETE " + key + " in " + localPort + ", send back ACK");
 
-            Message reply = new Message(Message.Type.ACK, null, null, rows, -1, -1);
-
-            try {
-                socket.setSoTimeout(1000);
-                // Create out stream
-                DataOutputStream iOut = new DataOutputStream(socket.getOutputStream());
-                // Write message
-                iOut.writeUTF(SimpleDynamoUtils.toJSON(reply));
-                iOut.flush();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            Log.d(TAG, "DELETE Reply sent");
         }
     }
 }
