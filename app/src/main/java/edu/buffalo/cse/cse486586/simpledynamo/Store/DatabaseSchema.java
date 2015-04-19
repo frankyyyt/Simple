@@ -23,4 +23,14 @@ public class DatabaseSchema {
         public static final String COLUMN_NAME_HASHKEY = "hashkey";
         public static final String COLUMN_NAME_VERSION = "version";
     }
+
+    public static abstract class QueueEntry implements BaseColumns {
+        public static final String TABLE_NAME = "queue";
+        public static final String COLUMN_NAME_ID = "id";
+        public static final String COLUMN_NAME_TYPE = "type";
+        public static final String COLUMN_NAME_KEY = "key";
+        public static final String COLUMN_NAME_VALUE = "value";
+        public static final String COLUMN_NAME_VERSION = "version";
+        public static final String COLUMN_NAME_PORT = "port";
+    }
 }

@@ -20,8 +20,8 @@ import java.net.Socket;
 import java.util.Hashtable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import edu.buffalo.cse.cse486586.simpledynamo.Client.SendThread;
 import edu.buffalo.cse.cse486586.simpledynamo.Common.LooperThread;
 import edu.buffalo.cse.cse486586.simpledynamo.Common.Membership;
 import edu.buffalo.cse.cse486586.simpledynamo.Common.Message;
@@ -41,6 +41,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     private LooperThread sendLooper;
     private LooperThread processLooper;
     private ExecutorService requestExecPool;
+    private AtomicInteger enQueueCounter;
 
     /**
      * Calculate the port number that this AVD listens on.
@@ -175,6 +176,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     public Uri processInsert(Uri u, ContentValues values) {
         String key = values.getAsString(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+        String hashKey = SimpleDynamoUtils.genHash(key);
         String value = values.getAsString(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE);
 
 
@@ -191,6 +193,11 @@ public class SimpleDynamoProvider extends ContentProvider {
         // then notify the next 2 successor to replicate.
 
         int replyNum = 0;
+        int version = -1;
+
+        boolean coorSuccess = false;
+        boolean repASuccess = false;
+        boolean repBSuccess = false;
 
         if (localPort != coordinator) {
 
@@ -199,20 +206,16 @@ public class SimpleDynamoProvider extends ContentProvider {
             // Step 2: sending requests to coordinator.
 
             Log.d(TAG, "INSERT -- FORWARD:" + coordinator + " KEY:" + key);
-            if (sendInsert(ins)) {
-                replyNum++;
-                Log.d(TAG, ins.forwardPort + " successfully insert");
-            } else {
-                Log.e(TAG, ins.forwardPort + " fail to insert");
-            }
+            version = sendInsert(ins);
+
+            if (version != -1) coorSuccess = true;
 
         } else {
 
             // Step 2: sending requests to coordinator.
-
-            u = localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, values);
-            replyNum = (u != null) ? replyNum + 1 : replyNum;
-            Log.d(TAG, "INSERT -- LOCAL:" + localPort + " KEY:" + key);
+            int n = getKeyVersion(hashKey);
+            coorSuccess = true;
+            version = (n >= version) ? n : version;
 
         }
 
@@ -222,28 +225,48 @@ public class SimpleDynamoProvider extends ContentProvider {
         // If repB success, replyNum ++
 
         // Replication
-        Message repA = new Message(Message.Type.REPLICA, key, value, -1, localPort, replicA);
+        Message repA = new Message(Message.Type.INSERT, key, value, -1, localPort, replicA);
 
         Log.d(TAG, "REPLICA -- TO:" + replicA + "KEY:" + key);
-        if (sendInsert(repA)) {
-            replyNum++;
-            Log.d(TAG, repA.forwardPort + " successfully replication");
-        } else {
-            Log.e(TAG, repA.forwardPort + " fail to replication");
-        }
+        int v1 = sendInsert(repA);
+        if (v1 > -1) repASuccess = true;
+        version = (v1 >= version) ? v1 : version;
 
         // Replication
-        Message repB = new Message(Message.Type.REPLICA, key, value, -1, localPort, replicB);
+        Message repB = new Message(Message.Type.INSERT, key, value, -1, localPort, replicB);
 
         Log.d(TAG, "REPLICA -- TO:" + replicB + "KEY:" + key);
-        if (sendInsert(repB)) {
-            replyNum++;
-            Log.d(TAG, repB.forwardPort + " successfully replication");
-        } else {
-            Log.e(TAG, repB.forwardPort + " fail to replication");
-        }
+        int v2 = sendInsert(repB);
+        if (v2 > -1) repBSuccess = true;
+        version = (v2 >= version) ? v2 : version;
 
         // Step 4: process reply and repackage response
+
+        Message u1 = new Message(Message.Type.UPDATE, key, value, version + 1, localPort, coordinator);
+        Message u2 = new Message(Message.Type.UPDATE, key, value, version + 1, localPort, replicA);
+        Message u3 = new Message(Message.Type.UPDATE, key, value, version + 1, localPort, replicB);
+
+
+        sendLooper.mHandler.post(new SendThread(u1));
+        sendLooper.mHandler.post(new SendThread(u2));
+        sendLooper.mHandler.post(new SendThread(u3));
+
+        if (!coorSuccess) {
+            Log.e(TAG, "TIMEOUT ABOUT SENDING " + Message.Type.UPDATE + " TO " + coordinator);
+            enQueue(key, value, Message.Type.UPDATE, version, coordinator);
+        }
+
+        if (!repASuccess) {
+            Log.e(TAG, "TIMEOUT ABOUT SENDING " + Message.Type.UPDATE + " TO " + replicA);
+            enQueue(key, value, Message.Type.UPDATE, version, replicA);
+        }
+
+        if (!repBSuccess) {
+            Log.e(TAG, "TIMEOUT ABOUT SENDING " + Message.Type.UPDATE + " TO " + replicB);
+            enQueue(key, value, Message.Type.UPDATE, version, replicB);
+        }
+
+
         return (replyNum >= SimpleDynamoUtils.WRITE_CONFIRM_NODE_NUM) ? u : null;
     }
 
@@ -263,12 +286,16 @@ public class SimpleDynamoProvider extends ContentProvider {
         processLooper = new LooperThread();
         requestExecPool = Executors.newCachedThreadPool();
 
+        enQueueCounter = new AtomicInteger();
 
         sendLooper.start();
         processLooper.start();
 
         // Start thread listening on port
         new Thread(new Server(context)).start();
+
+        // Start failure handler
+        new Thread(new DealerWithFailure()).start();
 
         return true;
     }
@@ -587,13 +614,20 @@ public class SimpleDynamoProvider extends ContentProvider {
     public int update(Uri uri, ContentValues values, String selection,
                       String[] selectionArgs) {
 
-        int rows;
+        long rows;
+
+        String key = values.getAsString(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY);
+        String hashKey = SimpleDynamoUtils.genHash(key);
+        int version = values.getAsInteger(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION);
+
+        if (version <= getKeyVersion(hashKey)) return 0;
 
         synchronized (dbLock) {
-            rows = db.update(DatabaseSchema.DatabaseEntry.TABLE_NAME, values, selection + "=?", selectionArgs);
+//            rows = db.update(DatabaseSchema.DatabaseEntry.TABLE_NAME, values, selection + "=?", selectionArgs);
+            rows = db.replace(DatabaseSchema.DatabaseEntry.TABLE_NAME, null, values);
         }
 
-        return rows;
+        return (int) (long) rows;
     }
 
 
@@ -751,16 +785,17 @@ public class SimpleDynamoProvider extends ContentProvider {
         return i;
     }
 
+
     /**
      * Client for sending insert message
      *
      * @param msg Message
      * @return <code>true</code> if success ack; <code>false</code> if failure ack.
      */
-    public boolean sendInsert(Message msg) {
+    public int sendInsert(Message msg) {
 
         Socket socket = null;
-        boolean result = false;
+        int result = -1;
         try {
 
             // Create socket
@@ -784,7 +819,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
             if (reply.msgType.equals(Message.Type.ACK)) {
                 Log.d(TAG, "ACK - from " + msg.forwardPort);
-                result = true;
+                result = reply.version;
             }
 
             in.close();
@@ -947,6 +982,71 @@ public class SimpleDynamoProvider extends ContentProvider {
         return false;
     }
 
+    public void enQueue(String key, String value, String type, int version, int port) {
+        int id = enQueueCounter.incrementAndGet();
+        ContentValues cv = new ContentValues();
+        cv.put(DatabaseSchema.QueueEntry.COLUMN_NAME_ID, id);
+        cv.put(DatabaseSchema.QueueEntry.COLUMN_NAME_KEY, key);
+        cv.put(DatabaseSchema.QueueEntry.COLUMN_NAME_TYPE, type);
+        cv.put(DatabaseSchema.QueueEntry.COLUMN_NAME_VALUE, value);
+        cv.put(DatabaseSchema.QueueEntry.COLUMN_NAME_VERSION, version);
+        cv.put(DatabaseSchema.QueueEntry.COLUMN_NAME_PORT, port);
+        synchronized (dbLock) {
+            db.replace(DatabaseSchema.QueueEntry.TABLE_NAME, null, cv);
+        }
+        Log.d(TAG, "TYPE:" + type + " KEY:" + key + " PORT:" + port + " INSERT IN QUEUE");
+        return;
+    }
+
+    public Message outQueue() {
+        Message msg = null;
+        synchronized (dbLock) {
+            Cursor cursor = db.query(
+                    DatabaseSchema.QueueEntry.TABLE_NAME,
+                    new String[]{
+                            DatabaseSchema.QueueEntry.COLUMN_NAME_ID,
+                            DatabaseSchema.QueueEntry.COLUMN_NAME_KEY,
+                            DatabaseSchema.QueueEntry.COLUMN_NAME_TYPE,
+                            DatabaseSchema.QueueEntry.COLUMN_NAME_VALUE,
+                            DatabaseSchema.QueueEntry.COLUMN_NAME_VERSION,
+                            DatabaseSchema.QueueEntry.COLUMN_NAME_PORT
+                    },
+                    null, null, null, null,
+                    DatabaseSchema.QueueEntry.COLUMN_NAME_ID + " ASC",
+                    "1"
+            );
+
+            if (cursor != null) {
+                int idIndex = cursor.getColumnIndex(DatabaseSchema.QueueEntry.COLUMN_NAME_ID);
+                int typeIndex = cursor.getColumnIndex(DatabaseSchema.QueueEntry.COLUMN_NAME_TYPE);
+                int keyIndex = cursor.getColumnIndex(DatabaseSchema.QueueEntry.COLUMN_NAME_KEY);
+                int valueIndex = cursor.getColumnIndex(DatabaseSchema.QueueEntry.COLUMN_NAME_VALUE);
+                int versionIndex = cursor.getColumnIndex(DatabaseSchema.QueueEntry.COLUMN_NAME_VERSION);
+                int portIndex = cursor.getColumnIndex(DatabaseSchema.QueueEntry.COLUMN_NAME_PORT);
+                if (keyIndex != -1 && valueIndex != -1 && versionIndex != -1) {
+                    if (cursor.moveToFirst()) {
+                        msg = new Message(
+                                cursor.getString(typeIndex),
+                                cursor.getString(keyIndex),
+                                cursor.getString(valueIndex),
+                                cursor.getInt(versionIndex),
+                                localPort,
+                                cursor.getInt(portIndex)
+                        );
+                        int id = cursor.getInt(idIndex);
+                        db.delete(DatabaseSchema.QueueEntry.TABLE_NAME,
+                                DatabaseSchema.QueueEntry.COLUMN_NAME_ID + " = ?",
+                                new String[]{String.valueOf(id)});
+
+                        Log.d(TAG, "TYPE:" + msg.msgType + " KEY:" + msg.key + " PORT:" + msg.forwardPort + " OUT OF QUEUE");
+                    }
+                }
+                cursor.close();
+            }
+        }
+
+        return msg;
+    }
 
     /**
      * Socket Server
@@ -986,20 +1086,6 @@ public class SimpleDynamoProvider extends ContentProvider {
                     switch (msg.msgType) {
 
                         case Message.Type.INSERT:
-
-                            Message insertAck = new Message(Message.Type.ACK, null, null, -1, -1, -1);
-
-                            try {
-                                // Create out stream
-                                DataOutputStream iOut = new DataOutputStream(clientSocket.getOutputStream());
-                                // Write message
-                                iOut.writeUTF(SimpleDynamoUtils.toJSON(insertAck));
-                                iOut.flush();
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-
-                            Log.d(TAG, "INSERT Reply sent");
 
                             processLooper.mHandler.post(new OnReceiveInsert(clientSocket, msg));
 
@@ -1054,6 +1140,20 @@ public class SimpleDynamoProvider extends ContentProvider {
 
                         case Message.Type.UPDATE:
 
+                            Message updateAck = new Message(Message.Type.ACK, null, null, -1, -1, -1);
+
+                            try {
+                                // Create out stream
+                                DataOutputStream iOut = new DataOutputStream(clientSocket.getOutputStream());
+                                // Write message
+                                iOut.writeUTF(SimpleDynamoUtils.toJSON(updateAck));
+                                iOut.flush();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+
+                            Log.d(TAG, "DELETE Reply sent");
+
                             processLooper.mHandler.post(new OnReceiveUpdate(clientSocket, msg));
 
                             break;
@@ -1079,7 +1179,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     }
 
-
     public class OnReceiveInsert implements Runnable {
 
         Socket socket;
@@ -1094,17 +1193,26 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         @Override
         public void run() {
-            ContentValues cv = new ContentValues();
-            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_KEY, key);
-            cv.put(DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE, value);
 
-            localInsert(SimpleDynamoUtils.DATABASE_CONTENT_URL, cv);
+            String hashKey = SimpleDynamoUtils.genHash(key);
+            int v = getKeyVersion(hashKey);
 
-            Log.d(TAG, "INSERT " + key + " in " + localPort + ", send back ACK");
+            Message insertAck = new Message(Message.Type.ACK, null, null, v, -1, -1);
+
+            try {
+                // Create out stream
+                DataOutputStream iOut = new DataOutputStream(socket.getOutputStream());
+                // Write message
+                iOut.writeUTF(SimpleDynamoUtils.toJSON(insertAck));
+                iOut.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            Log.d(TAG, "INSERT Reply sent");
 
         }
     }
-
 
     public class OnReceiveReplica implements Runnable {
 
@@ -1130,7 +1238,6 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         }
     }
-
 
     public class OnReceiveQuery implements Runnable {
 
@@ -1182,7 +1289,6 @@ public class SimpleDynamoProvider extends ContentProvider {
         }
     }
 
-
     public class OnReceiveUpdate implements Runnable {
 
         Socket socket;
@@ -1220,7 +1326,6 @@ public class SimpleDynamoProvider extends ContentProvider {
         }
     }
 
-
     public class OnReceiveDelete implements Runnable {
 
         Socket socket;
@@ -1238,5 +1343,86 @@ public class SimpleDynamoProvider extends ContentProvider {
             Log.d(TAG, "DELETE " + key + " in " + localPort + ", send back ACK");
 
         }
+    }
+
+    /**
+     * Send Thread
+     */
+    public class SendThread implements Runnable {
+
+        Message msg;
+        Socket socket = null;
+        private String TAG = SendThread.class.getSimpleName();
+
+        public SendThread(Message m) {
+            this.msg = m;
+        }
+
+        @Override
+        public void run() {
+            try {
+
+                // Create socket
+                socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}), msg.forwardPort);
+
+                // Create out stream
+                DataOutputStream out = new DataOutputStream(socket.getOutputStream());
+
+                // Write message
+                out.writeUTF(SimpleDynamoUtils.toJSON(msg));
+                out.flush();
+
+                Log.d(TAG, "Send from Client Thread");
+
+                Log.d(TAG, "Sent " + msg.msgType + " to " + msg.forwardPort + ", Waiting for reply...");
+
+                // Wait back
+                DataInputStream in = new DataInputStream(socket.getInputStream());
+
+                Message reply = SimpleDynamoUtils.parseJSON(in.readUTF());
+
+                if (reply.msgType.equals(Message.Type.ACK)) {
+                    Log.d(TAG, "ACK - from " + msg.forwardPort);
+                }
+
+                in.close();
+                out.close();
+
+            } catch (IOException e) {
+                Log.e(TAG, "TIMEOUT ABOUT SENDING " + msg.msgType + " TO " + msg.forwardPort);
+                Log.e(TAG, e.toString());
+                enQueue(msg.key, msg.value, msg.msgType, msg.version, msg.forwardPort);
+            } finally {
+
+                // Close socket
+                try {
+                    if (socket != null) socket.close();
+                } catch (IOException e) {
+                    Log.e(TAG, e.toString());
+                    e.printStackTrace();
+                }
+
+            }
+        }
+    }
+
+    public class DealerWithFailure implements Runnable {
+
+        @Override
+        public void run() {
+            while (true) {
+                Message retry = outQueue();
+                if (retry != null) {
+                    processLooper.mHandler.post(new SendThread(retry));
+                }
+
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
     }
 }

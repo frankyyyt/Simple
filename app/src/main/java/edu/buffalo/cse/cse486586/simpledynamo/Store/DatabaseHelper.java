@@ -27,6 +27,15 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     DatabaseSchema.DatabaseEntry.COLUMN_NAME_VERSION + INT_TYPE + COMMA_SEP +
                     DatabaseSchema.DatabaseEntry.COLUMN_NAME_VALUE + TEXT_TYPE + ");";
 
+    private static final String SQL_CREATE_QUEUE =
+            "CREATE TABLE " + DatabaseSchema.QueueEntry.TABLE_NAME + " (" +
+                    DatabaseSchema.QueueEntry.COLUMN_NAME_ID + " INT_TYPE PRIMARY KEY," +
+                    DatabaseSchema.QueueEntry.COLUMN_NAME_TYPE + TEXT_TYPE + COMMA_SEP +
+                    DatabaseSchema.QueueEntry.COLUMN_NAME_KEY + TEXT_TYPE + COMMA_SEP +
+                    DatabaseSchema.QueueEntry.COLUMN_NAME_VERSION + INT_TYPE + COMMA_SEP +
+                    DatabaseSchema.QueueEntry.COLUMN_NAME_PORT + INT_TYPE + COMMA_SEP +
+                    DatabaseSchema.QueueEntry.COLUMN_NAME_VALUE + TEXT_TYPE + ");";
+
     private static final String SQL_DELETE_ENTRIES =
             "DROP TABLE IF EXISTS " + DatabaseSchema.DatabaseEntry.TABLE_NAME;
 
@@ -49,6 +58,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public void onCreate(SQLiteDatabase db) {
         db.execSQL(SQL_CREATE_ENTRIES);
         Log.d(DatabaseHelper.class.getName(), DatabaseSchema.DatabaseEntry.TABLE_NAME + "table created");
+
+        db.execSQL(SQL_CREATE_QUEUE);
+        Log.d(DatabaseHelper.class.getName(), DatabaseSchema.QueueEntry.TABLE_NAME + "table created");
     }
 
     /**
