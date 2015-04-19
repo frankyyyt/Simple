@@ -17,7 +17,7 @@
     <option name="TOOL_WINDOW_CONFIGURED_FILTER" value="app: edu.buffalo.cse.cse486586.simpledynamo" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="00c445ae-068d-4f92-849a-82c0d0b1179f" name="Default" comment="phase3">
+    <list default="true" id="00c445ae-068d-4f92-849a-82c0d0b1179f" name="Default" comment="phase5">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
     </list>
     <ignored path="SimpleDynamo.iws" />
@@ -1611,7 +1611,11 @@
       <created>1429417095153</created>
       <updated>1429417095153</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="phase5">
+      <created>1429417270311</created>
+      <updated>1429417270311</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TodoView" selected-index="0">
@@ -1695,7 +1699,8 @@
     <MESSAGE value="phase2" />
     <MESSAGE value="phase3" />
     <MESSAGE value="phase4" />
-    <option name="LAST_COMMIT_MESSAGE" value="phase4" />
+    <MESSAGE value="phase5" />
+    <option name="LAST_COMMIT_MESSAGE" value="phase5" />
     <option name="OPTIMIZE_IMPORTS_BEFORE_PROJECT_COMMIT" value="true" />
     <option name="REFORMAT_BEFORE_PROJECT_COMMIT" value="true" />
     <option name="REARRANGE_BEFORE_PROJECT_COMMIT" value="true" />

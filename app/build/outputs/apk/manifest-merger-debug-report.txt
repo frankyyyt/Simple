@@ -50,9 +50,9 @@ ADDED from AndroidManifest.xml:21:17
 provider#edu.buffalo.cse.cse486586.simpledynamo.SimpleDynamoProvider
 ADDED from AndroidManifest.xml:25:9
 	android:authorities
-		ADDED from AndroidManifest.xml:26:13
+		ADDED from AndroidManifest.xml:27:13
 	android:name
-		ADDED from AndroidManifest.xml:25:19
+		ADDED from AndroidManifest.xml:26:13
 uses-sdk
 INJECTED from AndroidManifest.xml:0:0 reason: use-sdk injection requested
 	android:targetSdkVersion
