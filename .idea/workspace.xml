@@ -13,9 +13,6 @@
       <config />
     </shared>
   </component>
-  <component name="AndroidLogFilters">
-    <option name="TOOL_WINDOW_CONFIGURED_FILTER" value="app: edu.buffalo.cse.cse486586.simpledynamo" />
-  </component>
   <component name="ChangeListManager">
     <list default="true" id="00c445ae-068d-4f92-849a-82c0d0b1179f" name="Default" comment="phase5">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
@@ -44,22 +41,19 @@
       <file leaf-file-name="SimpleDynamoProvider.java" pinned="false" current="true" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/app/src/main/java/edu/buffalo/cse/cse486586/simpledynamo/SimpleDynamoProvider.java">
           <provider selected="true" editor-type-id="text-editor">
-            <state vertical-scroll-proportion="1.9698997" vertical-offset="4864" max-vertical-offset="23351">
-              <caret line="289" column="0" selection-start-line="289" selection-start-column="0" selection-end-line="289" selection-end-column="0" />
+            <state vertical-scroll-proportion="9.431408" vertical-offset="0" max-vertical-offset="24605">
+              <caret line="277" column="44" selection-start-line="277" selection-start-column="44" selection-end-line="277" selection-end-column="44" />
               <folding>
                 <element signature="imports" expanded="true" />
                 <element signature="e#5825#5826#0" expanded="true" />
                 <element signature="e#5874#5875#0" expanded="true" />
                 <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
                 <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-                <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-                <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-                <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
                 <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
                 <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-                <element signature="e#46225#46226#0" expanded="true" />
-                <element signature="e#46431#46432#0" expanded="true" />
                 <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+                <element signature="e#47861#47862#0" expanded="true" />
+                <element signature="e#47897#47898#0" expanded="true" />
               </folding>
             </state>
           </provider>
@@ -1640,7 +1634,7 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="1280" y="0" width="1920" height="1080" extended-state="0" />
-    <editor active="false" />
+    <editor active="true" />
     <layout>
       <window_info id="Palette&#9;" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.33" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
       <window_info id="Changes" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.32980332" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
@@ -1654,7 +1648,7 @@
       <window_info id="Gradle Console" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.33" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
       <window_info id="Build Variants" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.33" sideWeight="0.5" order="2" side_tool="true" content_ui="tabs" />
       <window_info id="Messages" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
-      <window_info id="Android" active="true" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" weight="0.6395939" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
+      <window_info id="Android" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" weight="0.38071066" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Gradle" active="false" anchor="right" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.33" sideWeight="0.5" order="3" side_tool="false" content_ui="tabs" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.15885022" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
@@ -1735,14 +1729,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -1781,14 +1772,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -1827,14 +1815,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -1865,14 +1850,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -1903,14 +1885,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -1941,14 +1920,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -1979,14 +1955,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -2017,14 +1990,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -2055,14 +2025,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -2092,14 +2059,11 @@
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
@@ -2226,22 +2190,19 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/app/src/main/java/edu/buffalo/cse/cse486586/simpledynamo/SimpleDynamoProvider.java">
       <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="1.9698997" vertical-offset="4864" max-vertical-offset="23351">
-          <caret line="289" column="0" selection-start-line="289" selection-start-column="0" selection-end-line="289" selection-end-column="0" />
+        <state vertical-scroll-proportion="9.431408" vertical-offset="0" max-vertical-offset="24605">
+          <caret line="277" column="44" selection-start-line="277" selection-start-column="44" selection-end-line="277" selection-end-column="44" />
           <folding>
             <element signature="imports" expanded="true" />
             <element signature="e#5825#5826#0" expanded="true" />
             <element signature="e#5874#5875#0" expanded="true" />
             <element signature="method#localQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="method#localDelete#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#Server#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="method#run#0;class#OnReceiveInsert#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveReplica#0;class#SimpleDynamoProvider#0" expanded="false" />
             <element signature="class#OnReceiveQuery#0;class#SimpleDynamoProvider#0" expanded="false" />
-            <element signature="e#46225#46226#0" expanded="true" />
-            <element signature="e#46431#46432#0" expanded="true" />
             <element signature="method#enQueue#0;class#SimpleDynamoProvider#0" expanded="false" />
+            <element signature="e#47861#47862#0" expanded="true" />
+            <element signature="e#47897#47898#0" expanded="true" />
           </folding>
         </state>
       </provider>
